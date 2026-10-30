@@ -1,53 +1,33 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-const config = require('./src/config');
-const { logger, init } = require('./src/utils/logger');
-const { startActivityUpdater } = require('./src/utils/activity');
-const { setDiscordClient } = require('./src/handlers/llmHandler');
+const fs = require('node:fs');
+const path = require('node:path');
 
-init(config.logWebhookUrl);
-
-process.on('unhandledRejection', (reason) => {
-    logger.error('SYSTEM', 'Rejeição de promessa não tratada', reason);
-});
-
-process.on('uncaughtException', (err) => {
-    logger.error('SYSTEM', 'Exceção não capturada', err);
-});
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions,
-    ],
-    partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
-});
-
-setDiscordClient(client);
-
-const eventsPath = path.join(__dirname, 'src/events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
-
-for (const file of eventFiles) {
-    const filePath = path.join(eventsPath, file);
-    const event = require(filePath);
-    if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client));
-    } else {
-        client.on(event.name, (...args) => event.execute(...args, client));
+function prepareEnvironment() {
+    process.chdir(__dirname);
+    require('dotenv').config({path:path.join(__dirname,'.env')});
+    const localPython = path.join(__dirname,'.venv',process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    if (fs.existsSync(localPython) && (!process.env.PYTHON_PATH || !fs.existsSync(process.env.PYTHON_PATH))) {
+        process.env.PYTHON_PATH = localPython;
     }
 }
 
-startActivityUpdater(client);
-
-client.login(config.discordToken).catch(err => {
-    logger.error('SYSTEM', 'Falha fatal durante login no Discord', err);
-});
+if (require.main === module) {
+    prepareEnvironment();
+    const {logger} = require('./src/utils/logger');
+    const config = require('./src/config');
+    const {validateConfiguration} = require('./src/config/validate');
+    const report = validateConfiguration(config);
+    config.capabilities = report.capabilities;
+    for (const warning of report.warnings) logger.warn(warning);
+    if (report.errors.length) {
+        for (const error of report.errors) logger.error(error);
+        logger.error('Corrija as variáveis indicadas no .env antes de conectar. Nenhuma tentativa de login foi feita.');
+        process.exitCode = 1;
+    } else {
+        logger.system('Hikari Zap: configuração carregada; iniciando conexão.');
+        require('./src/whatsapp/client').start().catch(error => {
+            logger.error('Falha ao iniciar Hikari Zap:',error);
+            process.exitCode = 1;
+        });
+    }
+}
+module.exports = {prepareEnvironment};

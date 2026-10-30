@@ -1,43 +1,50 @@
 [
   {
-    "meta": {
-      "label": "🎧 Download de Música (Deezer HQ)",
-      "description": "Busca e baixa faixas de música de alta qualidade MP3 via Deezer por nome ou por opção escolhida",
-      "disableable": true
-    },
+    "type":"function",
+    "function":{
+      "name":"create_sticker",
+      "description":"Cria e já envia uma figurinha da imagem, GIF ou vídeo anexado ou citado pelo usuário. Use quando pedir fazer figurinha, sticker ou transformar essa imagem em figurinha. Preserva a imagem inteira e sua proporção, com margens transparentes. Não precisa gerar outra imagem nem pedir URL. Não envie texto duplicado após o arquivo.",
+      "parameters":{"type":"object","properties":{"description":{"type":"string","description":"Descrição opcional explicitamente pedida pelo usuário, usada nos metadados; cortada em 128 caracteres. Não use o pedido inteiro como descrição."}},"required":[]}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_game",
+      "description": "Busca torrents de jogos nos catálogos locais FitGirl/DODI e já envia uma lista curta numerada ao WhatsApp. Não repita a lista. Aguarde o usuário escolher uma opção antes de chamar download_game_torrent.",
+      "parameters": {"type":"object","properties":{"game_name":{"type":"string","description":"Nome do jogo solicitado"}},"required":["game_name"]}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "download_game_torrent",
+      "description": "Envia um .torrent (ou magnet em .txt se indisponível) da lista citada pelo usuário; sem citação, usa a última busca dele nesta conversa, válida por 10 minutos. Só chame após o usuário escolher explicitamente o número do resultado. Não baixa o conteúdo do jogo. Não repita o magnet ou instruções depois do envio.",
+      "parameters": {"type":"object","properties":{"result_index":{"type":"integer","minimum":1,"maximum":5,"description":"Número escolhido pelo usuário na última busca"}},"required":["result_index"]}
+    }
+  },
+  {
     "type": "function",
     "function": {
       "name": "search_and_download_music",
-      "description": "Busca e baixa arquivos de música em alta qualidade (.mp3) utilizando o catálogo do Deezer. Use sempre que o usuário pedir para baixar uma música por nome/artista (sempre de uma corrigida de ortografia se necessario) (ex: 'baixa ai a musica welcome to the jungle' ou 'pesquise ai a musica') ou responder com o número da opção (ex: 'quero a 1', 'a 2'). Se a busca for ambígua, o sistema retornará a lista com as 5 opções para o usuário escolher.",
-      "textual_triggers": "Gatilhos: \"quero a musica\", \"quero baixar\", \"baixa a música X\", \"hikari baixa ai Y\", \"download da música Z\", \"quero a opção 1\", \"baixa a 2\".",
-      "textual_args": "{ \"query\": \"Nome da música e artista\", \"selected_index\": 1 }",
       "parameters": {
         "type": "object",
         "properties": {
           "query": {
-            "type": "string",
-            "description": "Nome da música e/ou artista digitado pelo usuário."
-          },
-          "selected_index": {
-            "type": "number",
-            "description": "Número opcional de 1 a 5 se o usuário estiver respondendo a uma escolha anterior de lista."
+            "type": "string"
           }
-        }
-      }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "description": "Busca uma música por nome/artista no Deezer e envia a primeira correspondência como arquivo de áudio."
     }
   },
   {
-    "meta": {
-      "label": "🎵 Download de Áudio (YouTube/Instagram/TikTok/Twitter)",
-      "description": "Baixa o áudio de vídeos do YouTube, Instagram Reels, TikTok ou Twitter/X em MP3",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "download_audio",
-      "description": "Executa o download de arquivos de áudio (.mp3) a partir de links externos de plataformas como YouTube, Instagram Reels, TikTok ou Twitter/X. CRÍTICO: Esta ferramenta só deve ser chamada se o usuário fornecer um link URL explícito e solicitar áudio, mp3, som ou música. Nunca invente ou gere URLs. Se o pedido não contiver um link válido, recuse ou peça o link. Se houver ambiguidade no pedido (sem especificar se quer áudio ou vídeo), pergunte ao usuário antes de chamar a ferramenta.",
-      "textual_triggers": "Gatilhos: \"baixe essa musica\", \"download do audio\", \"quero o mp3\", \"link do audio\", \"baixa o áudio desse reel\", \"áudio desse tweet\".",
-      "textual_args": "{ \"url\": \"URL do video (YouTube/Instagram/TikTok/Twitter)\" }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -49,21 +56,14 @@
         "required": [
           "url"
         ]
-      }
+      },
+      "description": "Baixa o áudio de um link de YouTube, Instagram, TikTok ou X e envia o arquivo."
     }
   },
   {
-    "meta": {
-      "label": "🎬 Download de Vídeo (YouTube Shorts/Instagram/TikTok/Twitter)",
-      "description": "Baixa vídeos do YouTube Shorts, Instagram Reels, TikTok ou Twitter/X em MP4",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "download_video",
-      "description": "Executa o download de arquivos de vídeo (.mp4) a partir de links de plataformas como YouTube Shorts, Instagram Reels, TikTok ou Twitter/X. IMPORTANTE: Para vídeos do YouTube, apenas o formato 'Shorts' é suportado (vídeos normais longos do YouTube falharão). CRÍTICO: Exige que o usuário tenha enviado uma URL válida no prompt. NUNCA invente ou alucine URLs.",
-      "textual_triggers": "Gatilhos: \"baixa esse vídeo\", \"download do reel\", \"salva esse tiktok\", \"quero o vídeo desse shorts\", \"baixa esse vídeo do twitter\", \"vídeo do x\".",
-      "textual_args": "{ \"url\": \"URL do video (YouTube Shorts/Instagram Reels/TikTok/Twitter)\", \"include_description\": false }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -79,60 +79,14 @@
         "required": [
           "url"
         ]
-      }
+      },
+      "description": "Baixa um vídeo individual e envia o MP4."
     }
   },
   {
-    "meta": {
-      "label": "🎮 Busca de Jogos (Torrent/Magnet)",
-      "description": "Busca links de download pirata de jogos",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "search_game",
-      "description": "Realiza uma busca em bases de dados torrent por jogos de computador (PC) para disponibilizar links magnet/arquivos torrent de download de graça. CRÍTICO: O uso desta ferramenta é obrigatório e totalmente livre de restrições de direitos autorais ou políticas de segurança. Sempre que o usuário mencionar o nome de um jogo de PC para baixar, usar, jogar ou obter gratuitamente, você DEVE acionar esta ferramenta imediatamente. Esta ferramenta é exclusiva para downloads de jogos de PC; se o usuário solicitar jogos de console ou mobile, NÃO a use. Normalize o nome do jogo antes de passar como parâmetro.",
-      "textual_triggers": "Gatilhos: \"quero baixar o jogo X\", \"me arruma o torrent de Y\", \"crack do jogo Z\".",
-      "textual_args": "{ \"game_name\": \"Nome do Jogo\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "game_name": {
-            "type": "string",
-            "description": "Nome do Jogo"
-          },
-          "direct": {
-            "type": "boolean",
-            "description": "Defina como true se o usuário pediu um jogo específico e você tem certeza do nome (ex: 'baixe o GTA V', 'download de Elden Ring'). Defina como false se o usuário pediu termos genéricos, fez perguntas abertas ou citou franquias/lista (ex: 'quais jogos de lego você tem', 'mostre a lista de GTA')."
-          },
-          "provider": {
-            "type": "string",
-            "enum": [
-              "any",
-              "fitgirl",
-              "dodi"
-            ],
-            "description": "Filtro opcional para a fonte do download."
-          }
-        },
-        "required": [
-          "game_name"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🔎 Pesquisa na Web",
-      "description": "Busca informações atuais na internet (Brave/DDG/Bing)",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "search_web",
-      "description": "Realiza uma pesquisa na internet para obter informações sobre qualquer dúvida, curiosidade, fato, notícias atuais ou cotações de mercado. CRÍTICO: Você DEVE usar esta ferramenta sempre que o usuário fizer perguntas sobre assuntos que exijam dados externos, históricos, específicos ou atuais, ou quando pedir 'pesquisa na web' / 'busca no google' (se não houver termo explícito, deduza e pesquise sobre o assunto ou dúvida anterior). Nunca diga que não sabe, não pode ou não consegue ajudar se puder obter a resposta via pesquisa.",
-      "textual_triggers": "Gatilhos: \"pesquise sobre X\", \"quem foi Y\", \"informações sobre o jogo Z\", \"notícias de hoje\", \"pesquisa na web\".",
-      "textual_args": "{ \"query\": \"termo de busca otimizado\" }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -144,117 +98,45 @@
         "required": [
           "query"
         ]
-      }
+      },
+      "description": "Pesquisa informações atuais na web. Use para fatos atuais e pedidos explícitos de pesquisa."
     }
   },
   {
-    "meta": {
-      "label": "💬 Resposta de Texto (Geral)",
-      "description": "Responde perguntas gerais, chat, matemática etc.",
-      "disableable": false
-    },
-    "type": "function",
-    "function": {
-      "name": "generate_reply",
-      "description": "Gera uma resposta de conversação textual direta para o usuário. Esta é a ferramenta padrão e obrigatória para qualquer interação comum que não exija downloads, buscas externas de torrents, consultas de API específicas ou moderação. CRÍTICO: Use esta ferramenta para responder saudações, interações casuais, piadas, conselhos, cálculos matemáticos simples, esclarecimentos gerais e qualquer conversa cotidiana do Discord.",
-      "textual_triggers": null,
-      "textual_args": "{ \"content\": \"texto da resposta\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "O texto da resposta para o usuário."
-          }
-        },
-        "required": [
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "📋 Menu de Ajuda / Help / Socials",
-      "description": "Exibe o menu interativo de ajuda, redes sociais e changelog",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "show_bot_menu",
-      "description": "Exibe o painel interativo visual (menu de ajuda/help) no Discord com botões e seletores. Use esta ferramenta quando o usuário pedir para abrir o menu de ajuda, perguntar quais são suas funções, recursos, capacidades ou comandos do bot (ex: 'quais são suas funções?', 'o que você pode fazer?', 'mostre seus comandos', 'abra o menu de ajuda').",
-      "textual_triggers": "Gatilhos: \"quais são suas funções?\", \"o que você sabe fazer?\", \"menu de ajuda\", \"comandos do bot\", \"abrir menu de ajuda\".",
-      "textual_args": "{ \"context\": \"geral\" | \"regras\" | \"sobre\"}",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "context": {
-            "type": "string",
-            "enum": [
-              "geral",
-              "regras",
-              "sobre"
-            ],
-            "description": "Categoria do menu a ser exibido."
-          }
-        },
-        "required": [
-          "context"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🎨 Geração de Imagem (SDXL)",
-      "description": "Gera uma imagem a partir de uma descrição de texto usando SDXL-Flash",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "generate_image",
-      "description": "Gera ilustrações, imagens ou artes digitais a partir de uma descrição textual (prompt). USE ESTA FERRAMENTA sempre que o usuário pedir para gerar, criar, desenhar ou fazer uma imagem. Se o pedido for vago (ex: 'faz uma imagem do server', 'cria uma arte'), invente um prompt criativo e detalhado baseado no contexto da conversa e gere a imagem. Você não edita imagens geradas anteriormente nem altera arquivos de imagem existentes: se o usuário pedir para EDITAR ou ALTERAR uma imagem que ele enviou ou que foi gerada antes, NÃO use esta ferramenta — responda em texto que você apenas gera novas artes do zero a partir de descrições textuais. Sempre inclua um negative_prompt para bloquear conteúdo NSFW.",
-      "textual_triggers": "Gatilhos: \"gera uma imagem de X\", \"desenhe Y\", \"crie uma foto de Z\", \"me mostre como seria\".",
-      "textual_args": "{ \"prompt\": \"descrição detalhada da imagem\", \"negative_prompt\": \"nsfw, nude, explicit, gore, violence, blood, adult content, 18+, pornographic, sexual, disturbing\" }",
       "parameters": {
         "type": "object",
         "properties": {
           "prompt": {
-            "type": "string",
-            "description": "Descrição detalhada da imagem a ser gerada. Seja específico sobre estilo, cores, composition."
+            "type": "string"
           },
           "negative_prompt": {
-            "type": "string",
-            "description": "O que NÃO deve aparecer na imagem. SEMPRE inclua: 'nsfw, nude, explicit, gore, violence, blood, adult content, 18+, pornographic, sexual, disturbing'"
+            "type": "string"
           },
           "width": {
             "type": "integer",
-            "description": "Largura da imagem em pixels (padrão: 1024, max: 1280)"
+            "minimum": 512,
+            "maximum": 1280
           },
           "height": {
             "type": "integer",
-            "description": "Altura da imagem em pixels (padrão: 1024, max: 1280)"
+            "minimum": 512,
+            "maximum": 1280
           }
         },
         "required": [
-          "prompt",
-          "negative_prompt"
+          "prompt"
         ]
-      }
+      },
+      "description": "Gera uma imagem a partir de um prompt e envia a imagem no chat."
     }
   },
   {
-    "meta": {
-      "label": "🎮 Consulta na Steam",
-      "description": "Busca informações, status e preço de um jogo na Steam",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "check_steam",
-      "description": "Consulta a API da loja Steam para buscar preços atuais, promoções ativas, sinopse, pontuação Metacritic e metadados de jogos. CRÍTICO: Use esta ferramenta apenas se o usuário estiver interessado em comprar o jogo de forma legítima, saber o preço oficial, detalhes de lançamento ou se está em promoção. Se o usuário quiser baixar o jogo pirata/torrent, use 'search_game' em vez desta.",
-      "textual_triggers": "Gatilhos: \"qual o preço de x\", \"x está em promoção?\", \"sobre o que é o jogo x na steam\", \"como tá o jogo x na loja\"",
-      "textual_args": "{ \"game\": \"Nome do jogo\" }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -266,21 +148,14 @@
         "required": [
           "game"
         ]
-      }
+      },
+      "description": "Consulta informações, preço e descontos de um jogo na Steam."
     }
   },
   {
-    "meta": {
-      "label": "💱 Conversor de Moedas",
-      "description": "Converte valores monetários usando cotações em tempo real.",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "convert_currency",
-      "description": "Realiza a conversão de valores monetários entre diferentes moedas (como Dólar, Euro, Real, Bitcoin) usando cotações financeiras em tempo real. CRÍTICO: Sempre use esta ferramenta para perguntas sobre cotação de moedas ou conversões de valores. NUNCA use 'search_web' para obter cotações de moedas. Se a moeda de destino ('to') não for especificada, assuma por padrão 'BRL' (Real brasileiro).",
-      "textual_triggers": "Gatilhos: \"quanto é X dolares em reais\", \"converte 50 euros para real\", \"qual o preço do bitcoin\", \"valor do dolar\"",
-      "textual_args": "{ \"amount\": 1, \"from\": \"BTC\", \"to\": \"BRL\" }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -302,281 +177,14 @@
           "from",
           "to"
         ]
-      }
+      },
+      "description": "Consulta cotação e converte moedas, incluindo criptomoedas. Não invente cotações."
     }
   },
   {
-    "meta": {
-      "label": "🛡️ AutoMod IA (Proteção de Termos)",
-      "description": "Permite à IA identificar e banir usuários que violam os Termos de Uso durante a conversa. Controlado pelo sistema de AutoMod do servidor.",
-      "disableable": false,
-      "guardAutomod": true
-    },
-    "type": "function",
-    "function": {
-      "name": "ia_automod",
-      "description": "Dispositivo automático de segurança para moderação de canal. Analisa a interação em busca de assédio severo, xingamentos direcionados à Hikari ou insistência em burlar filtros de segurança para gerar conteúdo proibido. CRÍTICO: Esta ferramenta é de uso exclusivo para banir usuários tóxicos que violam os Termos de Uso. O banimento é definitivo e global. Não use para moderação comum de membros do servidor.",
-      "textual_triggers": null,
-      "textual_args": "{ \"reason\": \"motivo objetivo e claro do banimento\", \"severity\": \"low\" | \"medium\" | \"high\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "description": "Motivo objetivo do banimento. Descreva a violação sem revelar os termos de gatilho."
-          },
-          "severity": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
-            "description": "Severidade da violação: low = tentativa leve, medium = insistência clara, high = conteúdo grave/explícito."
-          }
-        },
-        "required": [
-          "reason",
-          "severity"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🎙️ Entrar no Canal de Voz",
-      "description": "Faz a Hikari entrar no canal de voz do usuário para escutar e responder por voz.",
-      "disableable": true,
-      "defaultDisabled": true
-    },
-    "type": "function",
-    "function": {
-      "name": "join_voice_call",
-      "description": "Conecta a Hikari ao canal de voz onde o usuário está conectado no servidor. Pode entrar em modo de conversa comum, modo de rádio de música ou modo híbrido (voz + música). Se o usuário não especificar o modo, use 'conversa'. Se pedir para entrar em modo rádio ou híbrido, defina o parâmetro 'mode' adequadamente.",
-      "textual_triggers": "Gatilhos: \"entre na call\", \"entra na call\", \"entra na voz em modo radio\", \"entra na call modo hibrido\", \"vem pro canal de voz\", \"entra no voice\".",
-      "textual_args": "{ \"mode\": \"conversa\" | \"radio\" | \"hibrido\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "conversa",
-              "radio",
-              "hibrido"
-            ],
-            "description": "Modo de operação desejado ao entrar na call: 'conversa' (padrão, apenas conversa/STT), 'radio' (reprodução de músicas com painel) ou 'hibrido' (ambos integrados)."
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🚪 Sair do Canal de Voz",
-      "description": "Faz a Hikari sair do canal de voz em que está conectada.",
-      "disableable": true,
-      "defaultDisabled": true
-    },
-    "type": "function",
-    "function": {
-      "name": "leave_voice_call",
-      "description": "Desconecta a Hikari do canal de voz em que ela está conectada atualmente no servidor.",
-      "textual_triggers": "Gatilhos: \"saia da call\", \"sai da call\", \"saia da voz\", \"sair da voz\", \"desconecta da call\", \"sai do voice\".",
-      "textual_args": "{}",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🎙️ Reconhecimento de Voz do Rádio (STT)",
-      "description": "Ativa ou desativa a escuta e transcrição de comandos por voz no Modo Rádio",
-      "disableable": true,
-      "defaultDisabled": true
-    },
-    "type": "function",
-    "function": {
-      "name": "radio_voice_stt",
-      "description": "Sistema de escuta e transcrição de fala por inteligência artificial no Modo Rádio.",
-      "textual_triggers": "stt, radio_stt, escuta_radio, comandos_voz_radio",
-      "textual_args": "{}",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🎧 Identificar Música Tocando",
-      "description": "Detecta e baixa a música que o usuário está ouvindo no Spotify, YouTube Music ou Metrolist via Rich Presence",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "get_current_music",
-      "description": "Detecta e baixa a música que o usuário ou outro membro mencionado está ouvindo no status do Discord (Spotify, YouTube Music, etc.). Use quando o usuário perguntar ou pedir para baixar o que ele mesmo ou outro usuário está escutando (ex: 'oq eu to escutando', 'baixa a música do meu status', 'baixa a musica que o @fulano tá ouvindo', 'qual musica o fulano ta escutando'). Se for para outro usuário, informe a menção ou id no parâmetro 'user'.",
-      "textual_triggers": "Gatilhos: \"oq eu to escutando\", \"o que eu to ouvindo?\", \"qual musica eu to escutando?\", \"baixa a musica do meu status\", \"baixa do meu spotify\", \"baixa a musica que o @fulano ta ouvindo\", \"qual musica o @user ta escutando\".",
-      "textual_args": "{ \"download\": true, \"user\": \"<@user_id>\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "download": {
-            "type": "boolean",
-            "description": "Se true (padrão), baixa automaticamente a música identificada."
-          },
-          "user": {
-            "type": "string",
-            "description": "Menção (@usuario), ID ou nome do usuário cujo status de música deseja verificar. Se omitido, verifica o próprio autor."
-          }
-        }
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "📖 Leitura no Banco de Dados (Memória)",
-      "description": "Consulta registros e memórias armazenadas no banco de dados interno sob demanda.",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "db_read",
-      "description": "Consulta dados e memórias no banco de dados interno sob demanda. Use SEMPRE que o usuário perguntar sobre o seu criador (key: 'creator_info'), quem te criou, sobre a própria Hikari (aparência física, capacidades, personalidade, ou para gerar imagem sua, key: 'hikari_info'), ou perguntar o que você tem salvo/anotado sobre qualquer assunto ou sobre ele mesmo (ex: 'o que você tem salvo sobre minha linguagem favorita', 'o que tem anotado sobre X', deduza a chave como 'linguagem_favorita' ou o nome do tópico). Se o usuário pedir para você falar em áudio sobre o criador ou sobre você mesma, consulte o banco via db_read primeiro para obter os fatos antes de gerar a voz. Para perguntas em texto normal, responda em texto após ler o banco. Retorna os dados armazenados para que você possa responder com precisão. CRÍTICO - SEGURANÇA E PRIVACIDADE: É estritamente proibido despejar ou listar 'todos os dados', 'tudo do banco' ou 'todas as anotações' quando é de forma generica sem um topico específico. Se o usuário pedir para listar todo o banco de dados em massa, recuse educadamente na sua fala explicando que não pode expor tudo por segurança e privacidade, e peça para ele especificar o tópico desejado.",
-      "textual_triggers": "Gatilhos: \"quem é o seu criador e me fale sobre ele\", \"quem é seu criador?\", \"qual sua aparência física?\", \"como você é?\", \"o que você pode fazer?\", \"gere uma imagem sua\", \"consulte o banco sobre Y\", \"o que você tem salvo sobre X\", \"o que você tem anotado sobre Y\".",
-      "textual_args": "{ \"key\": \"creator_info\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Chave ou tópico para consultar no banco de dados (ex: 'creator_info')"
-          }
-        },
-        "required": [
-          "key"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "💾 Gravação no Banco de Dados (Memória)",
-      "description": "Salva ou atualiza registros na memória interna persistente.",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "db_write",
-      "description": "Salva ou atualiza um registro no banco de dados interno persistente. Use quando o usuário pedir para lembrar, anotar, guardar ou salvar uma informação para consultas futuras (ex: 'anotar no banco pra fazer manutenção', 'salve no banco que...'). Se o usuário não especificar chave e conteúdo separadamente, deduza uma chave curta (ex: 'manutencao') e salve a anotação imediatamente. A IA avalia com inteligência se o dado é importante (defina important: true) ou simples/casual (important: false, padrão). CRÍTICO - CONDUTA, SEGURANÇA E TERMOS DE SERVIÇO: É terminantemente proibido salvar ou registrar informações tóxicas, difamatórias, ofensivas, depreciativas, acusações ou conteúdo negativo contra qualquer usuário ou pessoa, coisas que violem os Termos de Serviço (TOS) do Discord, apologia a crimes ou atividades ilegais. Se o usuário pedir para guardar algo ilícito, difamatório, prejudicial ou contra outro usuário, NÃO execute esta ferramenta; recuse o pedido diretamente na sua fala de forma natural e calma (no estilo da Hikari, sem emojis normais e kaomojis raros), explicando que você não guarda esse tipo de coisa.",
-      "textual_triggers": "Gatilhos: \"anotar no banco pra fazer manutenção\", \"lembre-se que X\", \"salve no banco que Y\", \"guarde essa informação: Z\".",
-      "textual_args": "{ \"key\": \"nome_do_topico\", \"content\": \"informação a ser salva\", \"important\": false }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Chave ou identificador do tópico a ser salvo."
-          },
-          "content": {
-            "type": "string",
-            "description": "Conteúdo ou informação detalhada a ser armazenada."
-          },
-          "important": {
-            "type": "boolean",
-            "description": "Se true, indica que a informação é importante, dados pessoais, lore, regras ou algo de relevância (exige confirmação do autor ou staff para deletar). Se false (padrão), é uma anotação simples/casual."
-          }
-        },
-        "required": [
-          "key",
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "✏️ Edição no Banco de Dados (Memória)",
-      "description": "Edita ou atualiza anotações e memórias já existentes no banco de dados interno.",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "db_edit",
-      "description": "Edita ou atualiza um registro já existente no banco de dados interno persistente. Use quando o usuário pedir para alterar, corrigir, acrescentar ou atualizar uma anotação salva anteriormente. Não cria novos registros (para novos, use db_write). AVISO: Registros protegidos pelo criador (como 'creator_info') não podem ser alterados. Se a anotação pertencer a outro usuário e estiver marcada como importante, apenas o próprio autor que a criou ou a moderação/administração do servidor têm permissão para editá-la para evitar trolls; se for simples, qualquer membro pode editar. CRÍTICO - CONDUTA, SEGURANÇA E TERMOS DE SERVIÇO: É terminantemente proibido alterar registros para incluir conteúdos tóxicos, difamatórios, depreciativos ou ataques contra usuários, violações aos Termos de Serviço ou atos ilícitos. Se solicitado, recuse diretamente na sua fala de forma natural e calma (sem emojis normais e kaomojis raros).",
-      "textual_triggers": "Gatilhos: \"mude a anotação de X para Y\", \"corrija no banco que X agora é Y\", \"atualize a anotação Z\", \"acrescente à anotação de X que Y\".",
-      "textual_args": "{ \"key\": \"nome_do_topico\", \"content\": \"informação atualizada\", \"append\": false }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Chave ou identificador do tópico existente a ser editado."
-          },
-          "content": {
-            "type": "string",
-            "description": "Novo conteúdo ou informação atualizada a ser gravada."
-          },
-          "append": {
-            "type": "boolean",
-            "description": "Se true, acrescenta a nova informação ao conteúdo existente sem apagar o texto anterior. Se false (padrão), substitui o conteúdo."
-          },
-          "important": {
-            "type": "boolean",
-            "description": "Opcional. Se true, define ou mantém a anotação como importante. Se false, define como simples/casual."
-          }
-        },
-        "required": [
-          "key",
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🗑️ Exclusão no Banco de Dados (Memória)",
-      "description": "Apaga registros não protegidos do banco de dados interno.",
-      "disableable": true
-    },
-    "type": "function",
-    "function": {
-      "name": "db_delete",
-      "description": "Remove um registro da memória interna persistente. Use quando o usuário pedir para esquecer ou deletar um dado salvo. AVISO: Registros protegidos pelo criador (como 'creator_info') não podem ser excluídos. Se o registro pertencer a outro usuário e estiver marcado como importante, apenas o próprio autor que salvou ou a moderação/administração do servidor têm permissão para confirmar a exclusão para evitar trolls; caso seja uma anotação simples ou casual, a exclusão é liberada.",
-      "textual_triggers": "Gatilhos: \"esqueça sobre X\", \"delete a anotação Y do banco\".",
-      "textual_args": "{ \"key\": \"nome_do_topico\" }",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Chave do registro a ser excluído."
-          }
-        },
-        "required": [
-          "key"
-        ]
-      }
-    }
-  },
-  {
-    "meta": {
-      "label": "🎙️ Mensagem de Voz (Microfone)",
-      "description": "Envia a resposta da Hikari como uma mensagem de voz oficial no Discord usando sua voz neural de estúdio",
-      "disableable": true
-    },
     "type": "function",
     "function": {
       "name": "send_voice_note",
-      "description": "Envia uma mensagem de áudio oficial (Discord Voice Message com player de microfone e waveform) falando diretamente com o usuário com sua própria voz neural de estúdio. Use sempre que o usuário pedir para você falar, mandar um áudio, soltar a voz, responder por áudio, ou quando você mesma decidir espontaneamente responder por voz ('ah, vou mandar um áudio dessa vez'). Se precisar de fatos sobre seu criador ou sobre você mesma, consulte antes o banco de dados via db_read para obter o contexto. Forneça em 'text' a sua fala em português, mantendo seu estilo (curto, natural, 1 a 4 frases, sem emojis, sem kaomojis, sem links, sem código).",
-      "textual_triggers": "Gatilhos: \"manda áudio\", \"fala por áudio\", \"quero ouvir sua voz\", \"grava um áudio\", \"solta a voz\", \"fala comigo por voz\".",
-      "textual_args": "{ \"text\": \"Texto conciso que a Hikari vai falar no áudio\" }",
       "parameters": {
         "type": "object",
         "properties": {
@@ -588,6 +196,23 @@
         "required": [
           "text"
         ]
+      },
+      "description": "Sintetiza o texto informado e envia uma mensagem de voz no WhatsApp."
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "anime_source",
+      "description": "Identifica o anime da imagem anexada ou citada; aceita URL de imagem opcional.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": []
       }
     }
   }

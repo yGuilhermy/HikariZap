@@ -1,269 +1,74 @@
 const axios = require('axios');
-let cheerio = null;
-require('dotenv').config();
-const SEARCH_CONFIG = {
-    BING_ENDPOINT: 'https://www.bing.com/search',
-    MAX_RESULTS_SCRAPE: 8,
-    MAX_DEEP_READ: 3,
-    MIN_CONTENT_LENGTH: 100,
-    MAX_CONTENT_LENGTH: 2000,
-    TIMEOUT_MS: 6000,
-    DOMAIN_BLACKLIST: [
-        'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com',
-        'amazon.com', 'mercadolivre.com.br', 'shopee.com.br',
-        'orders.google.com', 'myaccount.google.com', 'accounts.google.com'
-    ],
-    DOMAIN_WHITELIST: [
-        'wikipedia.org', 'stackoverflow.com', 'github.com',
-        'g1.globo.com', 'uol.com.br', 'techtudo.com.br',
-        'cnnbrasil.com.br', 'bbc.com', 'mcpedl.com'
-    ]
-};
-async function analyzeSearchIntent(prompt, providerFunc) {
-    const searchTriggers = ['pesquise', 'pesquisa', 'procure', 'procurar', 'busque', 'buscar', 'search', 'google', 'check', 'consulte', 'verifique', 'quem', 'qual', 'quanto', 'como'];
-    const lowerPrompt = prompt.toLowerCase();
-    if (!searchTriggers.some(t => lowerPrompt.includes(t))) {
-        return { shouldSearch: false, query: null };
-    }
-    const optimizerPrompt = `
-[SYSTEM]
-Você é um Otimizador de Busca SearchEngine (SEO).
-Sua missão: Transformar o pedido do usuário em uma QUERY PERFEITA para o Bing/Google.
-ENTRADA: "${prompt}"
-REGRAS:
-1. Ignore saudações e polidez ("por favor", "bom dia").
-2. Identifique o NÚCLEO da busca (O que o usuário quer saber?).
-3. Converta para palavras-chave diretas (se for técnico, prefira inglês).
-4. Se for notícias/fatos, adicione o ano atual (2026).
-5. REMOVA ASPAS da resposta final.
-SAÍDA (Apenas uma linha):
-SIM: termo da busca
-ou
-NAO
-`;
-    try {
-        console.log(`[🔎 INTENT] Analisando intenção de busca...`);
-        const responseCtx = await providerFunc(optimizerPrompt, "Responda apenas com o comando solicitado.");
-        let cleanResponse = responseCtx.text.trim();
-        cleanResponse = cleanResponse.replace(/"/g, '').replace(/\*/g, '');
-        if (cleanResponse.toUpperCase().startsWith('SIM:')) {
-            const query = cleanResponse.substring(4).trim();
-            console.log(`[🔎 INTENT] Busca Aprovada. Query: "${query}"`);
-            return { shouldSearch: true, query };
-        }
-        return { shouldSearch: false, query: null };
-    } catch (e) {
-        if (lowerPrompt.includes('pesquise') || lowerPrompt.includes('procure')) {
-            const fallback = prompt.replace(/pesquise|procure|por favor|para mim/gi, '').trim();
-            return { shouldSearch: true, query: fallback };
-        }
-        return { shouldSearch: false, query: null };
-    }
+const cheerio = require('cheerio');
+const config = require('../config');
+const {safeGet} = require('../utils/network');
+const {logger} = require('../utils/logger');
+
+function sanitizeFallbackQuery(query) {
+    return String(query || '')
+        .replace(/^(?:o\s+que\s+(?:tá|está|vem|tem)\s+acontecendo\s+com|oq\s+ta\s+acontecendo\s+com|o\s+que\s+(?:é|são)|oq\s+é|quem\s+é|pesquise\s+(?:sobre|por)?|pesquisa\s+(?:sobre|por)?|procure\s+(?:sobre|por)?)\s+/i, '')
+        .replace(/\b(?:atualmente|ultimamente|hoje\s+em\s+dia|no\s+momento)\b/gi, '')
+        .trim();
 }
-async function executeBingSearch(query) {
-    try {
-        console.log(`[🔎 BING] Buscando: "${query}"`);
-        const response = await axios.get(SEARCH_CONFIG.BING_ENDPOINT, {
-            params: { q: query },
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
-                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Cookie': 'SRCHHPGUSR=SRCHLANG=pt'
-            },
-            timeout: SEARCH_CONFIG.TIMEOUT_MS
-        });
-        if (!cheerio) cheerio = require('cheerio');
-        const $ = cheerio.load(response.data);
-        const results = [];
-        $('.b_algo').each((i, el) => {
-            if (results.length >= SEARCH_CONFIG.MAX_RESULTS_SCRAPE) return false;
-            const title = $(el).find('h2').text().trim();
-            const link = $(el).find('a').attr('href');
-            const snippet = $(el).find('.b_caption p').text().trim() ||
-                $(el).find('.b_snippet').text().trim() ||
-                $(el).find('.tab-content').text().trim() ||
-                $(el).text().substring(0, 150);
-            if (title && link) {
-                results.push({ title, link, snippet, score: 0 });
-            }
-        });
-        $('.b_focusText, .l_ec, .b_paractl, .rwrl').each((i, el) => {
-            const text = $(el).text().trim();
-            if (text.length > 10) {
-                results.unshift({
-                    title: "RESPOSTA RÁPIDA BING",
-                    link: "#quick-answer",
-                    snippet: text,
-                    score: 999
-                });
-            }
-        });
-        return results;
-    } catch (e) {
-        console.error(`[🔎 BING ERROR] ${e.message}`);
-        return [];
-    }
+
+function isDictionaryResult(url, title, isDefinitionQuery) {
+    if (isDefinitionQuery) return false;
+    const host = (url || '').toLowerCase();
+    const isDictHost = ['dicio.com.br', 'priberam.org', 'significados.com.br', 'escreva.ai', 'vestibulandoweb.com.br'].some(d => host.includes(d));
+    if (isDictHost) return true;
+    return /^(?:significado\s+de|o\s+que\s+é\s+tá)\b/i.test(title || '');
 }
-function rankAndFilterResults(rawResults, query) {
-    const keywords = query.toLowerCase().split(' ').filter(w => w.length > 2);
-    const validResults = [];
-    rawResults.forEach(r => {
-        if (r.link === "#quick-answer") {
-            r.score = 999;
-            validResults.push(r);
-            return;
-        }
-        let score = 0;
-        const lowerTitle = r.title.toLowerCase();
-        const lowerSnippet = r.snippet.toLowerCase();
-        const lowerLink = r.link.toLowerCase();
-        if (SEARCH_CONFIG.DOMAIN_BLACKLIST.some(d => lowerLink.includes(d))) {
-            return;
-        }
+
+async function searchWeb(query, signal) {
+    if (typeof query !== 'string' || !query.trim() || query.length > 500) throw new Error('Informe uma pesquisa de até 500 caracteres.');
+    logger.search(`Buscando na web por: "${query}"`);
+    if (config.braveApiKey) {
         try {
-            const urlObj = new URL(r.link);
-            if ((urlObj.pathname === '/' || urlObj.pathname.length < 2) && !lowerTitle.includes(keywords[0])) return;
-            if (urlObj.pathname.includes('/login') || urlObj.pathname.includes('/signin')) return;
-        } catch (e) { return; }
-        keywords.forEach(kw => {
-            if (lowerTitle.includes(kw)) score += 10;
-        });
-        keywords.forEach(kw => {
-            if (lowerLink.includes(kw)) score += 15;
-        });
-        keywords.forEach(kw => {
-            if (lowerSnippet.includes(kw)) score += 5;
-        });
-        if (lowerTitle.includes(query.toLowerCase())) {
-            score += 20;
-        }
-        if (SEARCH_CONFIG.DOMAIN_WHITELIST.some(d => lowerLink.includes(d))) {
-            score += 10;
-        }
-        if (r.link.split('/').length < 4) {
-            score -= 5;
-        }
-        if (score > 10) {
-            r.score = score;
-            validResults.push(r);
-        }
-    });
-    return validResults.sort((a, b) => b.score - a.score);
-}
-
-function isPrivateOrLocalHost(hostname) {
-    if (!hostname) return true;
-    const host = hostname.toLowerCase().trim();
-    if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.lan')) {
-        return true;
-    }
-    if (host === '::1' || host === '::' || host.startsWith('fc00:') || host.startsWith('fe80:')) {
-        return true;
-    }
-    const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-    const match = host.match(ipv4Regex);
-    if (match) {
-        const a = Number(match[1]);
-        const b = Number(match[2]);
-        const c = Number(match[3]);
-        const d = Number(match[4]);
-        if (a > 255 || b > 255 || c > 255 || d > 255) return true;
-        if (a === 0 || a === 127) return true;
-        if (a === 10) return true;
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        if (a === 192 && b === 168) return true;
-        if (a === 169 && b === 254) return true;
-        if (a >= 224) return true;
-    }
-    if (/^\d+$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) {
-        return true;
-    }
-    return false;
-}
-
-function isValidFetchUrl(urlString) {
-    if (!urlString || typeof urlString !== 'string') return false;
-    try {
-        const parsed = new URL(urlString);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-            return false;
-        }
-        if (isPrivateOrLocalHost(parsed.hostname)) {
-            return false;
-        }
-        return true;
-    } catch (_) {
-        return false;
-    }
-}
-
-async function fetchPageContent(url) {
-    if (!isValidFetchUrl(url)) {
-        console.warn(`[🔎 SSRF BLOCKED] URL inválida ou privada bloqueada: ${url}`);
-        return null;
-    }
-    try {
-        console.log(`[🔎 READ] Lendo: ${url}`);
-        const response = await axios.get(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html'
-            },
-            timeout: 5000
-        });
-        if (!cheerio) cheerio = require('cheerio');
-        const $ = cheerio.load(response.data);
-        $('script, style, nav, footer, header, aside, .ads, .menu, .sidebar, .comments, .related, .modal, .popup').remove();
-        let root = $('article');
-        if (root.length === 0) root = $('main');
-        if (root.length === 0) root = $('#content, .content, #main, .main');
-        if (root.length === 0) root = $('body');
-        let text = '';
-        root.find('p, h1, h2, h3, li').each((i, el) => {
-            const t = $(el).text().replace(/\s+/g, ' ').trim();
-            if (t.length > 40 || $(el).is('h1, h2')) {
-                text += t + '\n';
+            const response = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+                params: {q: query, count: 5},
+                headers: {
+                    'X-Subscription-Token': config.braveApiKey,
+                    'Accept': 'application/json'
+                },
+                timeout: 15000,
+                signal
+            });
+            const rows = response.data?.web?.results || [];
+            if (rows.length) {
+                logger.search(`Busca Brave retornou ${rows.length} resultados para "${query}"`);
+                return rows.slice(0, 5).map(x => ({title: x.title, url: x.url, snippet: x.description}));
             }
-        });
-        const finalContent = text.substring(0, SEARCH_CONFIG.MAX_CONTENT_LENGTH);
-        const tokens = Math.ceil(finalContent.length / 4);
-        console.log(`[🔎 STATS] ${url} -> ${finalContent.length} chars (~${tokens} tokens)`);
-        return finalContent;
-    } catch (e) {
-        console.warn(`[🔎 FAIL] Falha ao ler ${url}: ${e.message}`);
-        return null;
+        } catch { signal?.throwIfAborted(); }
     }
-}
-async function smartSearch(prompt, providerFunc) {
-    const decision = await analyzeSearchIntent(prompt, providerFunc);
-    if (!decision.shouldSearch) return null;
-    const rawResults = await executeBingSearch(decision.query);
-    if (rawResults.length === 0) return null;
-    const bestResults = rankAndFilterResults(rawResults, decision.query);
-    console.log(`[🔎 FUNNEL] ${rawResults.length} Raw -> ${bestResults.length} Filtrados.`);
-    if (bestResults.length === 0) {
-        console.warn(`[🔎 FUNNEL WARN] Filtro removeu tudo. Usando fallback RAW.`);
-        rawResults.slice(0, 2).forEach(r => bestResults.push(r));
+    const cleanQuery = sanitizeFallbackQuery(query) || query;
+    const isDefinitionQuery = /\b(significado|definição|definicao|dicionário|dicionario|o\s+que\s+significa)\b/i.test(query);
+    for (const [url, selector] of [['https://www.bing.com/search?q=', '.b_algo'], ['https://html.duckduckgo.com/html/?q=', '.result']]) {
+        try {
+            const response = await safeGet(url + encodeURIComponent(cleanQuery), {signal, headers:{'User-Agent':'Mozilla/5.0'}});
+            const $ = cheerio.load(response.data);
+            const rows = [];
+            $(selector).each((_, item) => {
+                const a = $(item).find('h2 a, .result__a').first();
+                let link = a.attr('href') || '';
+                if (link.startsWith('//')) link = 'https:' + link;
+                try {
+                    const parsed = new URL(link);
+                    if (parsed.searchParams.has('uddg')) link = parsed.searchParams.get('uddg');
+                    if (parsed.hostname.endsWith('bing.com') && parsed.searchParams.get('u')?.startsWith('a1')) link = Buffer.from(parsed.searchParams.get('u').slice(2), 'base64').toString();
+                    if (!/^https?:\/\//.test(link)) return;
+                    const title = a.text().trim();
+                    if (isDictionaryResult(link, title, isDefinitionQuery)) return;
+                    rows.push({title, url: link, snippet: $(item).find('.b_caption p, .result__snippet').text().trim().slice(0, 1000)});
+                } catch {}
+            });
+            if (rows.length) {
+                logger.search(`Busca alternativa retornou ${rows.length} resultados`);
+                return rows.slice(0, 5);
+            }
+        } catch { signal?.throwIfAborted(); }
     }
-    const targets = bestResults.slice(0, SEARCH_CONFIG.MAX_DEEP_READ);
-    console.log(`[🔎 TARGETS] Sites selecionados para leitura:`);
-    targets.forEach(t => console.log(` - ${t.link.substring(0, 60)}... (${t.score} pts)`));
-    const deepContents = await Promise.all(
-        targets.map(async (r) => {
-            if (r.link === "#quick-answer") return `[RESPOSTA RÁPIDA]: ${r.snippet}`;
-            const content = await fetchPageContent(r.link);
-            if (!content) return `[FONTE (Resumo): ${r.title}]\nURL: ${r.link}\nRESUMO (Site bloqueado/erro): ${r.snippet}\n--------------------`;
-            return `[FONTE: ${r.title}]\nURL: ${r.link}\nCONTEÚDO: ${content}\n--------------------`;
-        })
-    );
-    const finalContext = deepContents.filter(c => c).join('\n\n');
-    const totalTokens = Math.ceil(finalContext.length / 4);
-    console.log(`[🔎 CONTEXTO] Total Contexto Gerado: ${finalContext.length} chars (~${totalTokens} tokens)`);
-    return finalContext.length > 0 ? finalContext : null;
+    logger.search(`Nenhum resultado web encontrado para "${query}"`);
+    return [];
 }
-module.exports = {
-    smartSearch,
-    fetchPageContent,
-    isValidFetchUrl,
-    isPrivateOrLocalHost
-};
+
+module.exports = { searchWeb };

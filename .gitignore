@@ -1,80 +1,46 @@
-# 📦 Dependências
 node_modules/
-package-lock.json
-
-# 🔑 Segredos e Configurações de Usuário
+.venv/
+__pycache__/
+*.pyc
 .env
 .env.*
 !.env_example
-
-# 🗄️ Dados e Persistência (Ignorar tudo exceto estrutura base)
+cookies.txt
+.whatsapp-auth*/
 src/data/*
-!src/data/help.json
 !src/data/mcp_tools.json
-src/data/ai_database.json
-src/data/audio_transcriptions.json
-src/data/image_descriptions.json
-
-# 🗑️ Temporários e Logs
-src/data/temp_images/
-src/data/temp_audio/
-src/music/data/temp_radio_audio/
-src/music/data/
+logs/
 *.log
-historico.txt
-
-# 🛠️ IDEs
+.agents/
+INSTRUCOES_VPS.md
+AGENTS.md
 .vscode/
 .idea/
-*.swp
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Cookies
-cookies.txt
-
-# Scripts de uso unico
-enable_automod.js
-
-# Sistema de updates
-src/script/send_updates.js
-
-# Notas esquisofrenicas
-notas.md
-notas-tecnicas.md
-
-.agents/
+*.swp
 backups/
 *.zip
 *.tar.gz
-*.7z
-*.rar
-hikari temp/
-*.pth
-*.pt
-*.bin
-*.safetensors
-*.onnx
-*.ckpt
-*.wav
-*.ogg
-*.mp3
-*.flac
-*.m4a
-*.opus
-*.aac
-*.wma
-reference_audios/
-**/reference_audios/**
-models/
-**/models/**
-hikari_voice_export/
-**/hikari_voice_export/**
-voice_models/
-voices/
-voice/
-scratch_voice*
-src/community/
-tests/
+.gemini/
+.antigravity/
+.claude/
+.cursor/
+.opencode/
+opencode.json
+scratch/
+*.pid
+*-pid.txt
+*.key
+*.pem
+*.p12
+*.keystore
+*.jks
+*.db
+*.sqlite
+*.sqlite-journal
+dist/
+build/
+out/
+temp/
+tmp/

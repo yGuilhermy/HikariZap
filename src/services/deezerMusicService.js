@@ -1,145 +1,28 @@
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { spawn } = require('child_process');
-require('dotenv').config();
-
-const TEMP_AUDIO_DIR = path.join(__dirname, '../data/temp_audio');
-if (!fs.existsSync(TEMP_AUDIO_DIR)) {
-    fs.mkdirSync(TEMP_AUDIO_DIR, { recursive: true });
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const {run} = require('./mediaService');
+const config = require('../config');
+async function searchDeezerTracks(query, signal) {
+    const response = await axios.get('https://api.deezer.com/search',{params:{q:query},timeout:15000,signal});
+    return (response.data?.data || []).slice(0,5).map(x => ({id:x.id,title:x.title,artist:x.artist?.name,link:x.link}));
 }
-
-function calculateConfidenceScore(query, track) {
-    const cleanQuery = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const cleanTitle = (track.title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const cleanArtist = (track.artist?.name || track.artist || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    
-    let score = 0;
-    const queryTokens = cleanQuery.split(/\s+/).filter(Boolean);
-    const combinedText = `${cleanTitle} ${cleanArtist}`;
-    
-    let matchedTokens = 0;
-    for (const token of queryTokens) {
-        if (combinedText.includes(token)) {
-            matchedTokens++;
-        }
-    }
-    
-    if (queryTokens.length > 0) {
-        score = (matchedTokens / queryTokens.length) * 100;
-    }
-    return score;
-}
-
-async function searchDeezerTracks(query) {
+async function downloadDeezerTrack(raw, signal) {
+    const match = String(raw).match(/^(?:https:\/\/(?:www\.)?deezer\.com\/(?:[a-z]{2}\/)?track\/)?(\d+)$/);
+    if (!match) throw new Error('Faixa Deezer inválida.');
+    if (!process.env.DEEZER_ARL) throw new Error('Configure DEEZER_ARL para baixar músicas do Deezer.');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(),'hikari-deezer-'));
     try {
-        const searchUrl = `https://api.deezer.com/search?q=${encodeURIComponent(query)}`;
-        const response = await axios.get(searchUrl);
-        const items = response.data?.data || [];
-        
-        return items.slice(0, 5).map(item => ({
-            id: item.id,
-            title: item.title,
-            artist: item.artist?.name || 'Desconhecido',
-            album: item.album?.title || '',
-            duration: item.duration,
-            link: item.link,
-            cover: item.album?.cover_medium || item.album?.cover || ''
-        }));
-    } catch (error) {
-        console.error('[DeezerService] Erro ao buscar faixas:', error.message);
-        return [];
-    }
+        await run(config.pythonPath,[path.join(__dirname,'download_deezer.py'),`https://www.deezer.com/track/${match[1]}`,directory],{signal,timeout:120000});
+        const files = fs.readdirSync(directory).filter(x => /\.(mp3|flac)$/i.test(x));
+        if (!files.length) throw new Error('Nenhum arquivo de áudio retornado pelo Deezer.');
+        return path.join(directory,files[0]);
+    } catch (error) { fs.rmSync(directory,{recursive:true,force:true}); throw error; }
 }
-
-function downloadDeezerTrack(trackUrlOrId) {
-    return new Promise((resolve, reject) => {
-        const arl = process.env.DEEZER_ARL || process.env.DEEMIX_ARL || '';
-        const raw = String(trackUrlOrId || '').trim();
-        if (/[\r\n\0"'`$|;&<>\\]/.test(raw)) {
-            return reject(new Error('Entrada inválida para download do Deezer.'));
-        }
-        const link = raw.startsWith('http') ? raw : `https://www.deezer.com/track/${raw}`;
-        const jobId = crypto.randomUUID().slice(0, 10);
-        const jobFolder = path.join(TEMP_AUDIO_DIR, `dz_${jobId}`);
-        if (!fs.existsSync(jobFolder)) {
-            fs.mkdirSync(jobFolder, { recursive: true });
-        }
-        const scriptPath = path.join(__dirname, 'download_deezer.py');
-        const pythonBin = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
-        
-        const proc = spawn(pythonBin, [scriptPath, link, jobFolder], {
-            env: {
-                ...process.env,
-                DEEZER_ARL: arl
-            }
-        });
-
-        let stdout = '';
-        let stderr = '';
-        proc.stdout.on('data', (d) => { stdout += d.toString(); });
-        proc.stderr.on('data', (d) => { stderr += d.toString(); });
-
-        proc.on('close', (code) => {
-            const match = stdout.match(/DOWNLOADED_FILE:(.+)/);
-            if (match && match[1]) {
-                const targetPath = match[1].trim();
-                if (fs.existsSync(targetPath)) {
-                    return resolve(targetPath);
-                }
-            }
-
-            if (fs.existsSync(jobFolder)) {
-                const files = fs.readdirSync(jobFolder).filter(f => f.endsWith('.mp3') || f.endsWith('.flac'));
-                if (files.length > 0) {
-                    const latestFile = files.map(f => ({
-                        name: f,
-                        time: fs.statSync(path.join(jobFolder, f)).mtimeMs
-                    })).sort((a, b) => b.time - a.time)[0];
-
-                    return resolve(path.join(jobFolder, latestFile.name));
-                }
-            }
-
-            if (code !== 0) {
-                if (fs.existsSync(jobFolder)) {
-                    try { fs.rmSync(jobFolder, { recursive: true, force: true }); } catch (_) {}
-                }
-                return reject(new Error(`Falha ao baixar faixa via deemix: ${stderr || `exit code ${code}`}`));
-            }
-            if (fs.existsSync(jobFolder)) {
-                try { fs.rmSync(jobFolder, { recursive: true, force: true }); } catch (_) {}
-            }
-            reject(new Error('Nenhum arquivo baixado pelo deemix.'));
-        });
-
-        proc.on('error', (err) => {
-            if (fs.existsSync(jobFolder)) {
-                try { fs.rmSync(jobFolder, { recursive: true, force: true }); } catch (_) {}
-            }
-            reject(new Error(`Falha ao iniciar processo Python: ${err.message}`));
-        });
-    });
+function cleanupTempAudio(file) {
+    const directory = path.dirname(file);
+    if (path.dirname(directory) !== os.tmpdir() || !path.basename(directory).startsWith('hikari-deezer-')) throw new Error('Caminho temporário inválido.');
+    fs.rmSync(directory,{recursive:true,force:true});
 }
-
-function cleanupTempAudio(filePath) {
-    if (filePath && fs.existsSync(filePath)) {
-        try {
-            fs.unlinkSync(filePath);
-            const parentDir = path.dirname(filePath);
-            if (path.basename(parentDir).startsWith('dz_')) {
-                fs.rmSync(parentDir, { recursive: true, force: true });
-            }
-        } catch (err) {
-            console.error('[DeezerService] Erro ao limpar arquivo temporário:', err.message);
-        }
-    }
-}
-
-module.exports = {
-    searchDeezerTracks,
-    calculateConfidenceScore,
-    downloadDeezerTrack,
-    cleanupTempAudio
-};
+module.exports = {searchDeezerTracks,downloadDeezerTrack,cleanupTempAudio};

@@ -1,5 +1,8 @@
-const axios = require('axios');
-const util = require('util');
+const fs = require('node:fs');
+const path = require('node:path');
+const util = require('node:util');
+const root = path.resolve(__dirname,'../..');
+require('dotenv').config({path:path.join(root,'.env')});
 
 const ANSI = {
     reset: '\x1b[0m',
@@ -22,90 +25,79 @@ const ANSI = {
     whiteBold: '\x1b[97;1m'
 };
 
-const DISCORD_ANSI = {
-    reset: '\u001b[0m',
-    bold: '\u001b[1m',
-    gray: '\u001b[0;30m',
-    red: '\u001b[1;31m',
-    green: '\u001b[1;32m',
-    yellow: '\u001b[1;33m',
-    blue: '\u001b[1;34m',
-    pink: '\u001b[1;35m',
-    cyan: '\u001b[1;36m',
-    white: '\u001b[0;37m'
-};
-
 const CATEGORIES = {
-    HISTORICO: {
-        tag: 'HISTORICO',
-        termColor: ANSI.magentaBold,
-        discColor: DISCORD_ANSI.pink
-    },
-    SYSTEM: {
-        tag: 'SYSTEM',
-        termColor: ANSI.cyanBold,
-        discColor: DISCORD_ANSI.cyan
-    },
-    DISCORD: {
-        tag: 'DISCORD',
-        termColor: ANSI.blueBold,
-        discColor: DISCORD_ANSI.blue
-    },
-    COMMAND: {
-        tag: 'COMMAND',
-        termColor: ANSI.greenBold,
-        discColor: DISCORD_ANSI.green
-    },
-    AI: {
-        tag: 'AI/LLM',
-        termColor: ANSI.magentaBold,
-        discColor: DISCORD_ANSI.pink
-    },
-    VOICE: {
-        tag: 'VOICE',
-        termColor: ANSI.cyan,
-        discColor: DISCORD_ANSI.cyan
-    },
-    MUSIC: {
-        tag: 'MUSIC',
-        termColor: ANSI.magenta,
-        discColor: DISCORD_ANSI.pink
-    },
-    SECURITY: {
-        tag: 'SECURITY',
-        termColor: ANSI.yellowBold,
-        discColor: DISCORD_ANSI.yellow
-    },
-    SEARCH: {
-        tag: 'SEARCH',
-        termColor: ANSI.blue,
-        discColor: DISCORD_ANSI.blue
-    },
-    WARN: {
-        tag: 'WARN',
-        termColor: ANSI.yellowBold,
-        discColor: DISCORD_ANSI.yellow
-    },
-    ERROR: {
-        tag: 'ERROR',
-        termColor: ANSI.redBold,
-        discColor: DISCORD_ANSI.red
-    },
-    INFO: {
-        tag: 'INFO',
-        termColor: ANSI.white,
-        discColor: DISCORD_ANSI.white
-    }
+    SYSTEM: { tag: 'SYSTEM', color: ANSI.cyanBold },
+    ZAP: { tag: 'ZAP', color: ANSI.blueBold },
+    COMMAND: { tag: 'COMMAND', color: ANSI.greenBold },
+    AI: { tag: 'AI/LLM', color: ANSI.magentaBold },
+    HISTORICO: { tag: 'HISTORICO', color: ANSI.magentaBold },
+    MEDIA: { tag: 'MEDIA', color: ANSI.greenBold },
+    VOICE: { tag: 'VOICE', color: ANSI.cyan },
+    SEARCH: { tag: 'SEARCH', color: ANSI.blue },
+    MUSIC: { tag: 'MUSIC', color: ANSI.magenta },
+    SECURITY: { tag: 'SECURITY', color: ANSI.yellowBold },
+    WARN: { tag: 'WARN', color: ANSI.yellowBold },
+    ERROR: { tag: 'ERROR', color: ANSI.redBold },
+    INFO: { tag: 'INFO', color: ANSI.white }
 };
 
-let webhookUrl = null;
-let logQueue = [];
-let flushTimeout = null;
-let isFlushing = false;
-let isHooked = false;
+const hiddenKeys = /key|token|password|secret|authorization|cookie|arl|webhook/i;
+let initialized = false, diskFailed = false, lastPrune = 0;
 
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalStderrWrite = process.stderr.write.bind(process.stderr);
+function isSignalNoise(text) {
+    return /Failed to decrypt message with any known session|Session error:Error: Bad MAC|Bad MAC|SessionCipher|doDecryptWhisperMessage|decryptWithSessions|queue_job\.js|session_cipher\.js|Closing session:|Opening session:|Session already closed|Session already open|Decrypted message with closed session|Closing open session in favor of incoming prekey bundle/i.test(text);
+}
+
+function installSignalFilter() {
+    const origErr = console.error.bind(console);
+    const origWarn = console.warn.bind(console);
+    const origInfo = console.info.bind(console);
+    console.error = (...args) => {
+        const text = args.map(a => typeof a === 'string' ? a : (a?.stack || a?.message || util.inspect(a))).join(' ');
+        if (isSignalNoise(text)) return;
+        origErr(...args);
+    };
+    console.warn = (...args) => {
+        const text = args.map(a => typeof a === 'string' ? a : (a?.stack || a?.message || util.inspect(a))).join(' ');
+        if (isSignalNoise(text)) return;
+        origWarn(...args);
+    };
+    console.info = (...args) => {
+        const text = args.map(a => typeof a === 'string' ? a : (a?.stack || a?.message || util.inspect(a))).join(' ');
+        if (isSignalNoise(text)) return;
+        origInfo(...args);
+    };
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = function (chunk, encoding, cb) {
+        const str = typeof chunk === 'string' ? chunk : chunk?.toString?.() || '';
+        if (isSignalNoise(str)) {
+            if (typeof cb === 'function') cb();
+            return true;
+        }
+        return origStderrWrite(chunk, encoding, cb);
+    };
+}
+installSignalFilter();
+
+function sanitize(value) {
+    if (typeof value !== 'string') value = String(value);
+    const secrets = Object.entries(process.env).filter(([key,val]) => hiddenKeys.test(key) && val && val.length >= 6)
+        .flatMap(([,val]) => [val,...val.split(',').map(x=>x.trim())]).filter(x=>x.length>=6).sort((a,b)=>b.length-a.length);
+    for (const secret of secrets) value = value.split(secret).join('[REDACTED]');
+    return value.replace(/Bearer\s+[^\s"']+/gi,'Bearer [REDACTED]')
+        .replace(/AIza[\w-]{20,}/g,'[REDACTED]')
+        .replace(/((?:api[_-]?key|token|password|secret|arl|authorization|cookie)\s*[=:]\s*)[^\s,}]+/gi,'$1[REDACTED]');
+}
+
+function safeValue(value, depth = 0, seen = new WeakSet()) {
+    if (value instanceof Error) return {name:value.name,message:sanitize(value.message),code:value.code,stack:value.stack};
+    if (Buffer.isBuffer(value)) return `[Buffer ${value.length} bytes]`;
+    if (!value || typeof value !== 'object') return typeof value === 'string' ? sanitize(value) : value;
+    if (seen.has(value) || depth > 3) return '[Object]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.slice(0,15).map(x => safeValue(x,depth+1,seen));
+    return Object.fromEntries(Object.entries(value).slice(0,30).map(([k,v]) => [k, hiddenKeys.test(k) ? '[REDACTED]' : safeValue(v,depth+1,seen)]));
+}
 
 function getTimeString() {
     const now = new Date();
@@ -115,315 +107,98 @@ function getTimeString() {
     return `${h}:${m}:${s}`;
 }
 
-function cleanString(str) {
-    if (typeof str !== 'string') return String(str);
-    return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+function settings() {
+    const selected = path.resolve(root,process.env.LOG_DIR||'logs');
+    const relative = path.relative(root,selected);
+    const directory = !relative||relative.startsWith('..')||path.isAbsolute(relative)?path.join(root,'logs'):selected;
+    return {directory,days:Math.max(1,Math.min(90,Number(process.env.LOG_RETENTION_DAYS)||7)),bytes:Math.max(1,Math.min(50,Number(process.env.LOG_MAX_FILE_MB)||5))*1048576};
 }
 
-function cleanLegacyTags(text) {
-    return text
-        .replace(/^\[(LOG|EVENT|SECURITY|STT|STARTUP|HISTORY|HISTORICO|VOICE|ERROR|WARN|INFO)\]\s*/i, '')
-        .trim();
-}
+function ownFile(file) { try { const st=fs.lstatSync(file); return st.isFile()&&!st.isSymbolicLink(); } catch { return false; } }
 
-function detectCategory(rawText) {
-    const upper = rawText.toUpperCase();
-    if (upper.includes('[HISTORICO]') || upper.includes('PROMPT IA:') || upper.includes('RESPOSTA IA:') || upper.includes('HISTÓRICO') || upper.includes('HISTORICO')) {
-        return CATEGORIES.HISTORICO;
-    }
-    if (upper.includes('[SECURITY]') || upper.includes('BANIDO') || upper.includes('DESBAN') || upper.includes('AUTOMOD') || upper.includes('RESTRICT')) {
-        return CATEGORIES.SECURITY;
-    }
-    if (upper.includes('[RADIOVOICE]') || upper.includes('[RADIOMCP]') || upper.includes('[RADIOPROVIDERS]') || upper.includes('[DEEZER]') || upper.includes('RADIO') || upper.includes('YOUTUBE')) {
-        return CATEGORIES.MUSIC;
-    }
-    if (upper.includes('[STT]') || upper.includes('[VOICE]') || upper.includes('CALL') || upper.includes('TRANSCRI')) {
-        return CATEGORIES.VOICE;
-    }
-    if (upper.includes('[MCP]') || upper.includes('[STRIPTHINKING]') || upper.includes('[IMAGE') || upper.includes('GEMINI') || upper.includes('LLM')) {
-        return CATEGORIES.AI;
-    }
-    if (upper.includes('[🔎') || upper.includes('[LEITURA]') || upper.includes('[BRAVE]') || upper.includes('[DUCK]') || upper.includes('[BUSCA]') || upper.includes('SCRAPER')) {
-        return CATEGORIES.SEARCH;
-    }
-    if (upper.includes('[LOG] SLASH:') || upper.includes('SLASH:') || upper.includes('COMANDO:')) {
-        return CATEGORIES.COMMAND;
-    }
-    if (upper.includes('[EVENT]') || upper.includes('GUILD') || upper.includes('SERVIDOR')) {
-        return CATEGORIES.DISCORD;
-    }
-    if (upper.includes('[STARTUP]') || upper.includes('LOGADO COMO') || upper.includes('INICIANDO REGISTRO') || upper.includes('COMANDOS REGISTRADOS')) {
-        return CATEGORIES.SYSTEM;
-    }
-    return CATEGORIES.INFO;
-}
-
-function printToTerminal(item) {
-    const timeFormatted = `${ANSI.white}[${item.time}]${ANSI.reset}`;
-    const tagFormatted = `${item.category.termColor}[${item.category.tag.padEnd(9)}]${ANSI.reset}`;
-    const levelFormatted = item.level === 'ERROR' ? `${ANSI.redBold}[ERR]${ANSI.reset} ` : item.level === 'WARN' ? `${ANSI.yellowBold}[WRN]${ANSI.reset} ` : '';
-    const output = `${timeFormatted} ${tagFormatted} ${levelFormatted}${item.text}\n`;
-    originalStdoutWrite(output);
-
-    if (item.errorStack) {
-        originalStderrWrite(`${ANSI.red}${item.errorStack}${ANSI.reset}\n`);
+function prune(directory,days) {
+    if (Date.now()-lastPrune<3600000) return;
+    lastPrune=Date.now();
+    for(const name of fs.readdirSync(directory)) {
+        if(!/^(hikari|errors)-\d{4}-\d{2}-\d{2}(?:\.[12])?\.log$/.test(name)) continue;
+        const file=path.join(directory,name);
+        if(ownFile(file)&&Date.now()-fs.statSync(file).mtimeMs>days*86400000) fs.unlinkSync(file);
     }
 }
 
-function enqueueLog(category, level, text, errorStack = null) {
-    const time = getTimeString();
-    const item = { time, category, level, text, errorStack };
-
-    printToTerminal(item);
-
-    if (!webhookUrl) return;
-
-    logQueue.push(item);
-
-    if (level === 'ERROR' || level === 'FATAL') {
-        if (flushTimeout) {
-            clearTimeout(flushTimeout);
-            flushTimeout = null;
-        }
-        flushLogsToWebhook();
-    } else if (!flushTimeout) {
-        flushTimeout = setTimeout(flushLogsToWebhook, 3500);
+function append(file,line,maxBytes) {
+    if (ownFile(file)&&fs.statSync(file).size+Buffer.byteLength(line)>maxBytes) {
+        const first=file.replace(/\.log$/,'.1.log'),second=file.replace(/\.log$/,'.2.log');
+        if(ownFile(second)) fs.unlinkSync(second);
+        if(ownFile(first)) fs.renameSync(first,second);
+        fs.renameSync(file,first);
     }
+    fs.appendFileSync(file,line,{mode:0o600});
 }
 
-function splitIntoDiscordChunks(lines, maxLen = 1850) {
-    const chunks = [];
-    let current = '';
-    for (const line of lines) {
-        if ((current ? current + '\n' + line : line).length > maxLen) {
-            if (current) chunks.push(current);
-            if (line.length > maxLen) {
-                let remaining = line;
-                while (remaining.length > maxLen) {
-                    chunks.push(remaining.substring(0, maxLen));
-                    remaining = remaining.substring(maxLen);
-                }
-                current = remaining;
-            } else {
-                current = line;
-            }
+function emit(catKey, level, ...args) {
+    const cat = CATEGORIES[catKey] || CATEGORIES.INFO;
+    let errStack = null;
+    const parts = [];
+    for (const arg of args) {
+        if (arg instanceof Error) {
+            errStack = arg.stack || arg.message;
+            parts.push(arg.message);
+        } else if (typeof arg === 'object' && arg !== null) {
+            parts.push(util.inspect(safeValue(arg), { depth: 3, colors: false, breakLength: Infinity }));
         } else {
-            current = current ? current + '\n' + line : line;
+            parts.push(sanitize(String(arg)));
         }
     }
-    if (current) chunks.push(current);
-    return chunks;
-}
-
-function sanitizePaths(text) {
-    if (typeof text !== 'string') return text;
-    return text
-        .replace(/[a-zA-Z0-9_\-]{24,}\.[a-zA-Z0-9_\-]{6,}\.[a-zA-Z0-9_\-]{27,}/g, '[DISCORD_TOKEN_REDACTED]')
-        .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
-        .replace(/(?:x-goog-api-key|apiKey|api_key|token)\s*[:=]\s*["']?([a-zA-Z0-9_\-]{16,})["']?/gi, '$1: [REDACTED]')
-        .replace(/([?&](?:key|apiKey|api_key)=)[^&\s]+/gi, '$1[REDACTED]')
-        .replace(/AIza[0-9A-Za-z-_]{35}/g, '[AIZA_KEY_REDACTED]')
-        .replace(/[A-Za-z]:\\[Uu]sers\\[^\\]+/g, 'C:\\Users\\***')
-        .replace(/\/home\/[^\/]+/g, '/home/***')
-        .replace(/```/g, '`\u200b`\u200b`');
-}
-
-async function flushLogsToWebhook() {
-    flushTimeout = null;
-    if (isFlushing || !logQueue.length || !webhookUrl) return;
-    isFlushing = true;
-
-    const batch = logQueue.splice(0, 15);
+    const text = parts.join(' ');
+    const timeFormatted = `${ANSI.white}[${getTimeString()}]${ANSI.reset}`;
+    const tagFormatted = `${cat.color}[${cat.tag.padEnd(9)}]${ANSI.reset}`;
+    const levelFormatted = level === 'ERROR' ? `${ANSI.redBold}[ERR]${ANSI.reset} ` : level === 'WARN' ? `${ANSI.yellowBold}[WRN]${ANSI.reset} ` : '';
+    const lineOutput = `${timeFormatted} ${tagFormatted} ${levelFormatted}${text}\n`;
+    if (level === 'ERROR') process.stderr.write(lineOutput);
+    else process.stdout.write(lineOutput);
+    if (errStack) process.stderr.write(`${ANSI.red}${sanitize(errStack)}${ANSI.reset}\n`);
 
     try {
-        const discordLines = [];
-
-        for (const log of batch) {
-            const timePart = `${DISCORD_ANSI.white}[${log.time}]${DISCORD_ANSI.reset}`;
-            const tagPart = `${log.category.discColor}[${log.category.tag.padEnd(9)}]${DISCORD_ANSI.reset}`;
-            const cleanText = sanitizePaths(log.text);
-            const msgPart = log.level === 'ERROR' ? `${DISCORD_ANSI.red}${cleanText}${DISCORD_ANSI.reset}` : `${DISCORD_ANSI.white}${cleanText}${DISCORD_ANSI.reset}`;
-
-            discordLines.push(`${timePart} ${tagPart} ${msgPart}`);
-
-            if (log.errorStack) {
-                const cleanStack = sanitizePaths(log.errorStack);
-                discordLines.push(`${DISCORD_ANSI.red}${cleanStack}${DISCORD_ANSI.reset}`);
-            }
-        }
-
-        const chunks = splitIntoDiscordChunks(discordLines);
-
-        for (const chunk of chunks) {
-            await axios.post(webhookUrl, {
-                content: `\`\`\`ansi\n${chunk}\n\`\`\``
-            }, { timeout: 8000 });
-        }
-
-    } catch (e) {
-        if (e.response && e.response.status === 429) {
-            const retryAfter = (e.response.data?.retry_after || 5) * 1000;
-            setTimeout(flushLogsToWebhook, retryAfter);
-            isFlushing = false;
-            return;
-        }
-    } finally {
-        isFlushing = false;
-        if (logQueue.length > 0 && !flushTimeout) {
-            flushTimeout = setTimeout(flushLogsToWebhook, 3500);
-        }
+        const at = new Date().toISOString();
+        const {directory,days,bytes} = settings();
+        fs.mkdirSync(directory,{recursive:true,mode:0o700});
+        prune(directory,days);
+        const diskLine = JSON.stringify({time:at,category:cat.tag,level,message:text})+'\n';
+        append(path.join(directory,`hikari-${at.slice(0,10)}.log`),diskLine,bytes);
+        if (level === 'ERROR') append(path.join(directory,`errors-${at.slice(0,10)}.log`),diskLine,bytes);
+        diskFailed = false;
+        initialized = true;
+    } catch {
+        diskFailed = true;
     }
-}
-
-function hookConsole() {
-    if (isHooked) return;
-    isHooked = true;
-
-    console.log = function (...args) {
-        const formatted = util.format(...args);
-        const clean = cleanString(formatted);
-        if (!clean) return;
-        const category = detectCategory(clean);
-        const text = cleanLegacyTags(clean);
-        enqueueLog(category, 'INFO', text);
-    };
-
-    console.info = function (...args) {
-        const formatted = util.format(...args);
-        const clean = cleanString(formatted);
-        if (!clean) return;
-        enqueueLog(CATEGORIES.INFO, 'INFO', cleanLegacyTags(clean));
-    };
-
-    console.warn = function (...args) {
-        const formatted = util.format(...args);
-        const clean = cleanString(formatted);
-        if (!clean) return;
-        enqueueLog(CATEGORIES.WARN, 'WARN', cleanLegacyTags(clean));
-    };
-
-    console.error = function (...args) {
-        let errStack = null;
-        const parts = [];
-        for (const arg of args) {
-            if (arg instanceof Error) {
-                errStack = arg.stack || arg.message;
-                parts.push(arg.message || String(arg));
-            } else if (typeof arg === 'object' && arg !== null) {
-                parts.push(util.inspect(arg, { depth: 2, colors: false }));
-            } else {
-                parts.push(String(arg));
-            }
-        }
-        const clean = cleanString(parts.join(' '));
-        if (!clean && !errStack) return;
-        enqueueLog(CATEGORIES.ERROR, 'ERROR', cleanLegacyTags(clean) || 'Erro capturado', errStack);
-    };
-}
-
-function init(url) {
-    if (url && typeof url === 'string' && url.startsWith('http')) {
-        webhookUrl = url;
-    }
-    hookConsole();
-    logger.system('Logger centralizado inicializado com sucesso.');
 }
 
 const logger = {
-    init,
     CATEGORIES,
-
-    system(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.SYSTEM, 'INFO', text);
-    },
-
-    discord(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.DISCORD, 'INFO', text);
-    },
-
-    command(name, userTag, location, details) {
-        const detailStr = details ? ` | ${typeof details === 'object' ? JSON.stringify(details) : details}` : '';
-        const text = `/${name} • ${userTag} @ ${location}${detailStr}`;
-        enqueueLog(CATEGORIES.COMMAND, 'INFO', text);
-    },
-
-    ai(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.AI, 'INFO', text);
-    },
-
-    historico(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.HISTORICO, 'INFO', text);
-    },
-
-    voice(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.VOICE, 'INFO', text);
-    },
-
-    music(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.MUSIC, 'INFO', text);
-    },
-
-    security(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.SECURITY, 'WARN', text);
-    },
-
-    search(message, meta) {
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(CATEGORIES.SEARCH, 'INFO', text);
-    },
-
-    debug(categoryName, message, meta) {
-        const cat = CATEGORIES[String(categoryName).toUpperCase()] || CATEGORIES.INFO;
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(cat, 'INFO', text);
-    },
-
-    info(categoryName, message, meta) {
-        const cat = CATEGORIES[String(categoryName).toUpperCase()] || CATEGORIES.INFO;
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(cat, 'INFO', text);
-    },
-
-    success(categoryName, message, meta) {
-        const cat = CATEGORIES[String(categoryName).toUpperCase()] || CATEGORIES.COMMAND;
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(cat, 'INFO', text);
-    },
-
-    warn(categoryName, message, meta) {
-        const cat = CATEGORIES[String(categoryName).toUpperCase()] || CATEGORIES.WARN;
-        const text = meta ? `${message} ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : message;
-        enqueueLog(cat, 'WARN', text);
-    },
-
-    error(categoryName, message, error) {
-        const cat = CATEGORIES[String(categoryName).toUpperCase()] || CATEGORIES.ERROR;
-        let stack = null;
-        let msg = message;
-        if (error instanceof Error) {
-            stack = error.stack;
-            msg = `${message}: ${error.message}`;
-        } else if (error) {
-            msg = `${message}: ${typeof error === 'object' ? JSON.stringify(error) : error}`;
-        }
-        enqueueLog(cat, 'ERROR', msg, stack);
-    }
+    system: (...args) => emit('SYSTEM', 'INFO', ...args),
+    zap: (...args) => emit('ZAP', 'INFO', ...args),
+    command: (...args) => emit('COMMAND', 'INFO', ...args),
+    ai: (...args) => emit('AI', 'INFO', ...args),
+    historico: (...args) => emit('HISTORICO', 'INFO', ...args),
+    media: (...args) => emit('MEDIA', 'INFO', ...args),
+    voice: (...args) => emit('VOICE', 'INFO', ...args),
+    search: (...args) => emit('SEARCH', 'INFO', ...args),
+    music: (...args) => emit('MUSIC', 'INFO', ...args),
+    security: (...args) => emit('SECURITY', 'WARN', ...args),
+    warn: (...args) => emit('WARN', 'WARN', ...args),
+    error: (...args) => emit('ERROR', 'ERROR', ...args),
+    info: (...args) => emit('INFO', 'INFO', ...args),
+    debug: (...args) => emit('INFO', 'DEBUG', ...args),
+    tool: (...args) => emit('AI', 'INFO', ...args),
+    image: (...args) => emit('MEDIA', 'INFO', ...args),
+    vision: (...args) => emit('AI', 'INFO', ...args)
 };
-
-function hookConsoleAndStreams(url) {
-    init(url);
-}
 
 module.exports = {
     logger,
-    init,
-    hookConsoleAndStreams,
-    sanitizePaths
+    sanitize,
+    sanitizePaths: sanitize,
+    flush: async () => {},
+    get initialized() { return initialized; }
 };

@@ -1,132 +1,116 @@
-# ✨ Funcionalidades, IA e Processamento de Mídia
+# ✨ Funcionalidades, Inteligência Artificial e Mídia
 
-A Hikari não é apenas um wrapper de chat. Ela é um ecossistema de processamento as síncrono que combina LLMs, difusão de imagens e extração de metadados.
+A HikariZap não é um simples robô de respostas pré-programadas. Ela é uma **Agente Autônoma** com raciocínio iterativo (Agent Loop), integração direta com ferramentas externas do mundo real e suporte nativo às particularidades do WhatsApp.
 
 ---
 
 ## 📂 Sumário
 
-1. [🧠 1. Inteligência Artificial: O Ciclo de Vida do Prompt](#-1-inteligência-artificial-o-ciclo-de-vida-do-prompt)
-2. [🎨 2. Geração de Imagens (Hierarquia de Provedores)](#-2-geração-de-imagens-hierarquia-de-provedores)
-3. [🎵 3. Processamento de Mídia (Áudio, Vídeo e Compressão)](#-3-processamento-de-mídia-áudio-vídeo-e-compressão)
-4. [🎙️ 4. Assistente de Voz & Protocolo DAVE (Calls do Discord)](#-4-assistente-de-voz--protocolo-dave-calls-do-discord)
-5. [🎙️ 5. Transcrição de Áudio no Histórico (Whisper Sob Demanda)](#-5-transcrição-de-áudio-no-histórico-whisper-sob-demanda)
-6. [💾 6. Banco de Dados Permanente & Memória Sob Demanda](#-6-banco-de-dados-permanente--memória-sob-demanda-zero-token-overhead)
-7. [🎙️ 7. Mensagens de Voz Nativas (XTTS v2)](./VOICE.md)
-8. [💡 Dicas de Uso Avançado](#-dicas-de-uso-avançado)
+1. [🧠 1. Inteligência Artificial e o Ciclo de Vida do Chat](#-1-inteligência-artificial-e-o-ciclo-de-vida-do-chat)
+2. [🖼️ 2. Motor Avançado de Figurinhas (Stickers)](#-2-motor-avançado-de-figurinhas-stickers)
+3. [🎮 3. Cantinho dos Games (Torrents & Steam)](#-3-cantinho-dos-games-torrents--steam)
+4. [🌍 4. Pesquisa Web em Tempo Real](#-4-pesquisa-web-em-tempo-real)
+5. [💱 5. Mestre das Finanças e Câmbio de Moedas](#-5-mestre-das-finanças-e-câmbio-de-moedas)
+6. [🎵 6. Downloads de Vídeo, Áudio e Deezer HQ](#-6-downloads-de-vídeo-áudio-e-deezer-hq)
+7. [🔍 7. Visão Computacional e Reconhecimento de Anime](#-7-visão-computacional-e-reconhecimento-de-anime)
+8. [🎙️ 8. Transcrição de Voz e Respostas em Áudio](#-8-transcrição-de-voz-e-respostas-em-áudio)
+9. [💡 Dicas de Uso Avançado](#-dicas-de-uso-avançado)
 
 ---
 
-## 🧠 1. Inteligência Artificial: O Ciclo de Vida do Prompt
+## 🧠 1. Inteligência Artificial e o Ciclo de Vida do Chat
 
-A Hikari processa todas as mensagens de IA através de uma **Fila Global (`processingQueue`)**.
+O processamento cognitivo da Hikari opera por meio de uma **Fila de Mensagens Serializada (`src/whatsapp/queue.js`)** e um loop autônomo de raciocínio (`executeAgentLoop`):
 
-### Fluxo de Resposta:
+### Fluxo de Conversação:
 
-1.  **Captura de Contexto:** A Hikari lê as últimas 5 a 10 mensagens do canal (Short-term memory) para garantir coerência.
-2.  **Identificação de Gatilhos:** O bot responde se:
-    - For mencionado (`@Hikari`).
-    - O texto conter a palavra "Hikari".
-    - Houver uma resposta direta (reply) à mensagem dela.
-3.  **Processamento Multimodal:** Se houver uma imagem anexa, ela é enviada junto ao prompt para análise Vision (sujeito à capacidade do modelo configurado). (Ainda não implementado)
-4.  **Parsing de Ferramentas:** A saída da IA é passada por um parser JSON que detecta se ela "decidiu" usar uma ferramenta (Busca Web, Imagem, Música).
-
----
-
-## 🎨 2. Geração de Imagens (Hierarquia de Provedores)
-
-A Hikari possui um motor de fallback agressivo para garantir que o usuário receba sua arte, mesmo que as APIs principais falhem.
-
-**Ordem de Execução:**
-
-1.  **Stability AI (Ultra/Core):** Se houver uma `STABILITY_API_KEY`. Qualidade fotorealista.
-2.  **Gradio/SDXL-Flash:** Fallback gratuito de alta velocidade.
-3.  **HuggingFace (FLUX.1):** Modelos SOTA rodando em endpoints de inferência.
-4.  **Stable Horde:** Rede descentralizada de GPUs (uso sob demanda).
-5.  **Pollinations:** O fallback definitivo para 100% de disponibilidade.
+1. **Captura e Filtragem de Mensagens:**
+   - **No Privado:** Qualquer mensagem enviada à Hikari é direcionada ao processamento imediato.
+   - **Em Grupos:** O bot só responde se for mencionado (`@número`), se a mensagem contiver o gatilho `"Hikari"`, se for uma resposta direta (quote/reply) a ela, ou se utilizar um comando explícito de prefixo `>` (ou `/`).
+2. **Contexto Deslizante (Memória Recente):**
+   - O bot mantém um histórico em memória das últimas 15 mensagens trocadas no chat (`Store`), garantindo respostas coerentes com o fluxo da conversa sem armazenar dados em texto aberto ou causar overhead desnecessário de tokens.
+3. **Loop de Ferramentas (Function Calling):**
+   - O modelo de linguagem recebe o catálogo de funções disponíveis em `src/data/mcp_tools.json`.
+   - Se o usuário fizer uma solicitação complexa (como *"Pesquise o preço do Portal 2 na Steam e converta 10 dólares em reais"*), a IA decide por conta própria chamar `check_steam`, em seguida `convert_currency`, coleta os resultados e sintetiza uma única resposta final amigável.
+4. **Serialização e Anti-Spam:**
+   - Para respeitar os limites de envio do WhatsApp, as mensagens são despachadas com espaçamento mínimo de 2 segundos, limite de 20 mensagens por minuto e corte automático em 24.000 caracteres.
 
 ---
 
-## 🎵 3. Processamento de Mídia (Áudio, Vídeo e Compressão)
+## 🖼️ 2. Motor Avançado de Figurinhas (Stickers)
 
-Implementamos um sistema completo de download e manipulação de mídia via `youtubeAudioHandler.js`.
+O sistema de figurinhas (`src/services/stickerService.js`) foi construído do zero utilizando **Sharp** e **FFmpeg**:
 
-- **Suporte Multplataforma:** O bot suporta download de áudio e vídeo de plataformas populares, como YouTube (geral para áudio, apenas Shorts para vídeo), Instagram Reels e TikTok (incluindo subdomínios como `vt.tiktok.com`).
-- **Download Inteligente de Áudio:** Extração apenas do melhor stream de áudio (`bestaudio`) via `yt-dlp` e conversão dinâmica com `ffmpeg` para MP3.
-- **Motor de Música Deezer HQ (100% Deezer):** Módulo dedicado (`deezerMusicService.js` / `deezerMusicHandler.js`) para buscar e baixar áudios de estúdio em altíssima qualidade (HQ MP3 / 320kbps) via `deemix`. Possui algoritmo de fidelidade por palavras-chave e exibe um menu interativo de seleção de 5 opções quando a busca for ambígua. Todos os arquivos MP3 são temporários e removidos do disco imediatamente após o envio.
-- **Download de Vídeo com Metadados:** Ao baixar vídeos, a Hikari pode extrair o uploader original e a descrição para exibição rica no chat, configurável via parâmetro.
-- **Compressão Inteligente:** Se o arquivo de vídeo ultrapassar o limite de upload do servidor (detectado dinamicamente: 25MB para padrão, 50MB para Boost Nível 2 e 100MB para Boost Nível 3), o usuário recebe a opção de iniciar a compressão.
-- **Fila Global & Proteção da Host:** O processo de compressão FFMPEG roda em uma fila global (apenas uma compressão simultânea) para preservar os recursos da VPS. Há um monitor de RAM ativo: se o uso de memória passar de 95%, a compressão é cancelada imediatamente para evitar travamento do servidor.
-- **Limitação de Uso:** Há uma limitação estrita de 1 download/processo ativo por usuário ao mesmo tempo para evitar sobrecarga.
-- **Cleanup Automático:** Todos os arquivos temporários são deletados após o envio. Vídeos grandes que aguardam compressão expiram após 6 horas.
+- **Proporção Perfeita (Sem Distorção):** As imagens são redimensionadas para a moldura quadrada padrão de 512×512 com preenchimento transparente (padding), preservando a proporção original do conteúdo horizontal ou vertical.
+- **Vídeos e GIFs Animados:** Converte vídeos curtos, GIFs e gravações de até 10 segundos em figurinhas animadas em formato WebP a 24 quadros por segundo.
+- **Injeção de Metadados EXIF:** Cada sticker recebe metadados com pacote e autor configuráveis nos metadados técnicos do WhatsApp.
+- **Reversão (`>toimg` / `>sticker2image`):**
+  - Figurinhas estáticas são convertidas de volta para imagens PNG transparentes de alta fidelidade.
+  - Figurinhas animadas são desempacotadas e reconstruídas como arquivos `.gif` com todos os frames preservados.
 
 ---
 
-## 🎙️ 4. Assistente de Voz & Protocolo DAVE (Calls do Discord)
+## 🎮 3. Cantinho dos Games (Torrents & Steam)
 
-O ecossistema de voz da Hikari permite que ela participe de chamadas de voz e atenda comandos dos usuários em tempo real.
+A Hikari disponibiliza consulta e extração imediata de arquivos para jogos de PC:
 
-- **Conexão Nativa com Protocolo DAVE (E2EE)**: Utiliza a versão mais recente do `@discordjs/voice` com suporte nativo ao protocolo de criptografia ponta a ponta do Discord (DAVE protocol version 1).
-- **Filtro de Energia Corporal de Áudio (PCM RMS)**: Analisa a energia do sinal PCM do fluxo de áudio recebido. Áudios com RMS < 250 ou de membros mutados são descartados automaticamente para evitar uso desnecessário de cotas das APIs de STT.
-- **Dicionário STT & Matcher Fonético de 75+ Variações**: Incorpora injeção de prompt no Whisper ("Hikari") aliado a um sistema de expressões regulares que identifica 75+ grafias e fonemas derivados de sotaques ou ruídos (ex: "Ricardo", "Hicari", "Icari", "Ficari", "Vicari", "Ih cari").
-- **Ferramenta Unificada MCP (Assistente de Voz)**: O controle de chamada (`join_voice_call` e `leave_voice_call`) é integrado e gerenciado como um único item unificado no comando `/ia_ferramentas`.
-- **Desconexão por Inatividade**: Quando todos os usuários humanos deixam o canal de voz, a Hikari se desconecta automaticamente preservando conexões do servidor.
-
----
-
-## 🎙️ 5. Transcrição de Áudio no Histórico (Whisper Sob Demanda)
-
-A Hikari não ignora áudios enviados nos canais! Quando acionada em um chat cujo histórico recente contém mensagens de voz:
-
-- **Transcrição Sob Demanda:** A Hikari envia o arquivo de voz para o motor Whisper apenas quando o usuário a menciona ou pergunta algo relacionado àquela conversa.
-- **Hierarquia de Provedores:** Utiliza primariamente **Wit.ai** para transcrição ultrarrápida e gratuita em português/outros idiomas, com fallback automático para a API do **Groq** (`whisper-large-v3-turbo`).
-- **Cache Persistente por Mensagem:** Uma vez que o áudio de uma mensagem foi transcrito, o texto resultante fica vinculado em memória àquela mensagem do histórico. Nas próximas interações, a Hikari reutiliza o texto transcrito sem acionar novamente as APIs.
-- **Filtro Inteligente de Tipo de Áudio:** Áudios de voz (notas de voz do Discord) são rotulados como `[Áudio transcrito: "..."]`, enquanto músicas ou arquivos de áudio normais são identificados apenas pelo nome original (ex: `musica.mp3`), evitando transcrições desnecessárias de faixas musicais.
+- **Bases de Repacks FitGirl e DODI:** Consulta local aos catálogos `src/data/fitgirl.json` e `src/data/dodi.json` (arquivos externos configurados pelo usuário, não inclusos no repositório).
+- **Validação de Infohash:** Extrai o hash criptográfico do magnet e verifica a integridade do link antes de enviar o documento `.txt` pronto para download no WhatsApp.
+- **Isolamento de Seleção por Conversa:** Ao realizar uma busca com `>torrent nome`, os resultados ficam indexados temporariamente por 10 minutos. O usuário pode simplesmente responder com o número correspondente (ex: `2` ou `>torrent 2`) para receber o magnet desejado.
+- **Consulta Oficial à Steam (`>steam nome`):** Busca títulos na loja da Steam e retorna dados oficiais de preço, desenvolvedora, porcentagem de desconto e sinopse do jogo.
 
 ---
 
-## 💾 6. Banco de Dados Permanente & Memória Sob Demanda (Zero Token Overhead)
+## 🌍 4. Pesquisa Web em Tempo Real
 
-Para evitar inflar o System Prompt a cada requisição com centenas de tokens de dados fixos ou fatos históricos, a Hikari conta com um sistema de **banco de dados permanente autônomo** (`src/data/ai_database.json`).
+Quando questionada sobre notícias, fatos recentes ou documentações técnicas, a Hikari aciona a ferramenta `search_web`:
 
-- **Consulta Sob Demanda & Agregação Multitópicos (`db_read`):** Em vez de carregar tudo no prompt, a IA decide autonomamente quando precisa consultar a memória. Possui busca inteligente em camadas e **agregação automática**: se existirem múltiplos registros sobre um mesmo assunto (ex: `sekinin`, `sekinin_regras`, `sekinin_eventos`), ela unifica e sintetiza todos em uma única resposta completa.
-- **Escrita e Auditoria de Autoria (`db_write`):** Ao salvar um registro, a Hikari grava automaticamente os metadados de autoria (`salvo_por: "usuario - id"`, `savedById`, `savedByTag`) e a classificação de relevância (`important: boolean`, padrão `false`), avaliada inteligentemente pela própria IA.
-- **Edição Segura (`db_edit`):** Permite alterar, corrigir ou acrescentar novas informações a anotações prévias, preservando o histórico e a autoria.
-- **Exclusão Controlada (`db_delete`):** Remove registros da memória quando solicitado.
-- **Trava contra Deleção e Adulteração por Terceiros:**
-  - Registros marcados como **importantes** (`important: true`) só podem ser alterados ou excluídos pelo **próprio autor** que os criou, por membros da **Staff/Moderação** (`Administrator`, `ManageGuild`, `ManageMessages` ou Dono do Servidor) ou pelo **Criador do Bot** (`isOwner`).
-  - Tentativas de outros membros comuns são recusadas pela Hikari de forma amigável e natural no chat (sem emojis), protegendo anotações da comunidade contra trolls.
-  - Registros simples (`important: false`) podem ser editados ou excluídos normalmente por qualquer membro.
-- **Blindagem contra Vazamento e Dumps em Massa:** A IA é instruída e bloqueada de realizar despejos globais de todo o banco de dados (`*`, `tudo`, `dump`) para usuários comuns por motivos de segurança e privacidade, direcionando o usuário a especificar o tópico desejado (com bypass para o Criador).
-- **Diretriz de Conduta e Proteção contra Conteúdo Nocivo:** A IA recusa categoricamente gravar acusações, difamações, ataques contra usuários, apologia a crimes ou violações aos Termos de Serviço do Discord no banco de dados.
-- **Identificação Visual no Rodapé:** Respostas formuladas com base em dados recuperados do banco exibem o indicador `-# 💾 Database`.
-- **Proteção do Criador (`protected: true`):** Registros estruturais (como `creator_info`) são blindados contra sobrescrita e deleção por qualquer usuário além do dono do bot.
-- **Controle Granular por Variáveis e Painel:** O acesso pode ser gerenciado individualmente via `.env` (`AI_DB_READ`, `AI_DB_WRITE`, `AI_DB_EDIT`, `AI_DB_DELETE`) ou pelos botões do Painel de Configuração do Criador (`/config`). Caso a leitura seja desativada, a escrita e deleção são automaticamente bloqueadas por segurança.
-- **Privacidade Open-Source:** O arquivo físico `src/data/ai_database.json` é ignorado no `.gitignore`, garantindo que informações pessoais e dados locais nunca vazem para o repositório público do GitHub.
+- Utiliza raspagem semântica limpa para consultar a internet.
+- Lê as páginas retornadas, filtra o ruído de anúncios e formata um resumo claro e direto diretamente no chat.
 
 ---
 
-## 🎙️ 7. Mensagens de Voz Nativas (XTTS v2 Neural Voice)
+## 💱 5. Mestre das Finanças e Câmbio de Moedas
 
-A Hikari suporta envio de mensagens de voz oficiais no chat com player de microfone nativo do Discord (`flags: 8192`), waveform interativa e síntese de voz neural via XTTS v2.
+A ferramenta `convert_currency` permite conversões monetárias em tempo real:
 
-- **Documentação Completa & Tutorial de Treinamento/Deploy**: Consulte o guia dedicado em [🎙️ Sistema Vocal Neural da Hikari](./VOICE.md).
+- Suporta dezenas de moedas fiduciárias (USD, BRL, EUR, JPY, GBP) e criptomoedas de destaque (BTC, ETH, SOL).
+- Calcula taxas diretas, inversas e cruzadas com base na cotação oficial.
+- Apresenta no rodapé a fonte da taxa (ex: AwesomeAPI ou Frankfurter) e a data/horário exato de publicação pelo provedor.
+
+---
+
+## 🎵 6. Downloads de Vídeo, Áudio e Deezer HQ
+
+A Hikari oferece um módulo versátil de mídia:
+
+- **Downloads da Internet (`>baixar_video` e `>baixar_audio`):** Utiliza `yt-dlp` e `ffmpeg` para capturar mídias de plataformas suportadas, respeitando o limite configurado em `WHATSAPP_MAX_MEDIA_MB`.
+- **Motor Deezer HQ 320kbps (`>musica nome e artista`):** Busca no catálogo oficial do Deezer e utiliza a biblioteca `deemix` para baixar o áudio de estúdio oficial em altíssima fidelidade. Arquivos baixados são transitórios e removidos do disco logo após a entrega.
+
+---
+
+## 🔍 7. Visão Computacional e Reconhecimento de Anime
+
+A ferramenta `identify_anime` integra-se com a API pública do **Trace.moe**:
+
+- Ao anexar um frame, print ou imagem de animação com o comando `>anime`, a Hikari identifica o anime exato, o episódio e a minutagem aproximada da cena.
+
+---
+
+## 🎙️ 8. Transcrição de Voz e Respostas em Áudio
+
+- **Transcrição STT (`>transcrever`):** Ao receber uma mensagem de voz ou áudio encaminhado, a Hikari transcreve o conteúdo por meio de modelos Whisper Turbo na nuvem (Groq / Wit.ai).
+- **Respostas Faladas (`>audio pergunta`):** A IA gera a resposta em texto e a sintetiza imediatamente em formato de áudio natural (PTT) com voz expressiva via XTTS v2.
+- **Leitura em Voz Alta (`>falar texto`):** Lê literalmente qualquer texto informado utilizando síntese vocal.
 
 ---
 
 ## 💡 Dicas de Uso Avançado
 
-- 💡 **Resumo de Chat (`/chat_resumo`):** A IA lê as últimas N mensagens e cria um mapeamento semântico de quem falou o que e sobre quais tópicos. Excelente para gerenciar canais movimentados.
-- 💡 **Trace.moe Integration:** A função `/anime_origem` permite que você encontre animes apenas enviando um frame. Ela retorna o título, episódio e o timestamp aproximado.
-- 💡 **Busca de Jogos e Preços da Steam:** A Hikari não apenas busca links Magnéticos em bases de dados, mas também pode consultar nativamente a **Steam**! Basta perguntar naturalmente como "O Elden Ring está em promoção na Steam?" e ela retornará dados atualizados, preços e sinopse, além de fazer um comentário divertido.
-- 💡 **Conversor de Moedas e Cripto:** Converta qualquer valor entre moedas reais (BRL, USD, EUR) ou cripto (BTC, ETH) apenas perguntando "quanto tá o bitcoin hoje?". Ela usa APIs financeiras com cache local de expiração diária e fallback automático.
-- 💡 **Visão Computacional e Edição:** A Hikari possui regras claras avisando que ela não realiza edições de imagens existentes e não possui visão computacional nativa em tempo real.
+- 💡 **Pedidos Naturais:** Em vez de comandos fixos, experimente pedir: *"Hikari, faça uma figurinha dessa imagem aqui e pesquise quanto tá o dólar hoje"*. A IA executará os dois passos sem que você precise digitar prefixos.
+- 💡 **Limpeza de Conversa:** Se a IA começar a misturar tópicos antigos em um chat longo, envie `>limpar` para reiniciar o contexto recente da conversa.
 
 ---
 
-> [!TIP]
-> Para ver a lista completa de comandos e explicações detalhadas, veja o [Guia de Comandos](./COMMANDS.md).
+[🏠 Voltar ao Menu Principal](./README.md)
 
----
-
-[🏠 Voltar ao Menu Principal](../README.md)

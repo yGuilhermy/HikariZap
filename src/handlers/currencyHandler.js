@@ -1,12 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
-
-const cachePath = path.join(__dirname, '../data/currency_cache.json');
-const CACHE_TTL = 15 * 60 * 1000;
-
-let memoryCache = null;
-let inFlightCachePromise = null;
+const config = require('../config');
 
 const nameMap = {
     '$': 'USD',
@@ -218,322 +211,73 @@ function parseCurrencyQuery(text) {
     return { amount: parseAmount(amount), from: normalizeCurrency(from), to: normalizeCurrency(to) };
 }
 
-function saveCacheToDisk(cache) {
-    try {
-        if (!fs.existsSync(path.dirname(cachePath))) {
-            fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-        }
-        const tempPath = `${cachePath}.tmp`;
-        fs.writeFileSync(tempPath, JSON.stringify(cache, null, 2), 'utf8');
-        fs.renameSync(tempPath, cachePath);
-    } catch (_) {
+function positiveRate(value) {
+    const rate = Number(value);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error('Cotação inválida recebida do provedor.');
+    return rate;
+}
+function quoteTime(item) {
+    const timestamp = Number(item.timestamp);
+    if (Number.isFinite(timestamp) && timestamp > 0) {
+        const date = new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
+        if (Number.isFinite(date.getTime())) return date.toISOString();
+    }
+    if (typeof item.create_date === 'string' && item.create_date.trim()) return item.create_date;
+    throw new Error('Cotação sem data de atualização.');
+}
+async function awesomeQuote(from, to, signal) {
+    const options = {timeout:8000, signal, headers:{'Cache-Control':'no-cache'}};
+    if (config.awesomeApiKey) options.headers['x-api-key'] = config.awesomeApiKey;
+    async function request(base, quote) {
+        const {data} = await axios.get(`https://economia.awesomeapi.com.br/json/last/${base}-${quote}`,options);
+        const item = data?.[`${base}${quote}`];
+        if (!item || item.code !== base || item.codein !== quote) throw new Error('Par indisponível no provedor.');
+        return {rate:positiveRate(item.bid),lastUpdate:quoteTime(item)};
+    }
+    let quote;
+    try { quote = await request(from,to); }
+    catch (error) {
+        if (signal?.aborted || Number(error.response?.status) !== 404) throw error;
         try {
-            fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf8');
-        } catch (__) {}
+            const inverse = await request(to,from);
+            quote = {...inverse,rate:positiveRate(1/inverse.rate)};
+        } catch (inverseError) {
+            if (signal?.aborted || Number(inverseError.response?.status) !== 404 || from === 'BRL' || to === 'BRL') throw inverseError;
+            const origin = await request(from,'BRL');
+            const target = await request(to,'BRL');
+            quote = {rate:positiveRate(origin.rate/target.rate),
+                lastUpdate:origin.lastUpdate === target.lastUpdate ? origin.lastUpdate : `${from}/BRL: ${origin.lastUpdate}; ${to}/BRL: ${target.lastUpdate}`,
+                calculation:'Taxa cruzada via BRL'};
+        }
+    }
+    return {...quote,source:'AwesomeAPI',sourceUrl:'https://docs.awesomeapi.com.br/api-de-moedas',
+        frequency:config.awesomeApiKey ? 'Cotação do provedor consultada agora' : 'Provedor pode manter cache de até 1 minuto'};
+}
+async function frankfurterQuote(from, to, signal) {
+    const {data} = await axios.get(`https://api.frankfurter.dev/v2/rate/${from}/${to}`,{timeout:8000,signal});
+    if (data?.base !== from || data?.quote !== to || !/^\d{4}-\d{2}-\d{2}$/.test(data?.date || '')) throw new Error('Resposta inválida do provedor.');
+    return {rate:positiveRate(data.rate),lastUpdate:data.date,source:'Frankfurter',sourceUrl:'https://frankfurter.dev/',frequency:'Taxa de referência diária; não é cotação em tempo real'};
+}
+async function convertCurrency(rawAmount, rawFrom, rawTo, signal) {
+    const amount = typeof rawAmount === 'number' ? rawAmount : parseAmount(rawAmount);
+    const from = normalizeCurrency(rawFrom || 'USD');
+    const to = normalizeCurrency(rawTo || 'BRL');
+    if (!Number.isFinite(amount) || amount < 0) return {error:'Informe um valor finito maior ou igual a zero.'};
+    if (![from,to].every(code=>/^[A-Z]{2,10}$/.test(code))) return {error:'Informe códigos de moeda válidos (ex: USD, EUR, BTC, BRL).'};
+    signal?.throwIfAborted();
+    if (from === to) return {success:true,amount,from,to,rate:1,result:amount,name:`${from}/${to}`,lastUpdate:'Não se aplica (mesma moeda)',source:'Identidade matemática'};
+    try {
+        const provider = config.currencyProvider || 'awesomeapi';
+        if (!['awesomeapi','frankfurter'].includes(provider)) return {error:'CURRENCY_PROVIDER inválido; use awesomeapi ou frankfurter.'};
+        const quote = await (provider === 'frankfurter' ? frankfurterQuote : awesomeQuote)(from,to,signal);
+        signal?.throwIfAborted();
+        const result = amount * quote.rate;
+        if (!Number.isFinite(result)) return {error:'O valor convertido ultrapassou o limite numérico.'};
+        return {success:true,amount,from,to,name:`${from}/${to}`,...quote,result,queriedAt:new Date().toISOString()};
+    } catch (error) {
+        if (signal?.aborted || error.name === 'AbortError' || error.code === 'ERR_CANCELED') throw error;
+        if (Number(error.response?.status) === 429) return {error:'O provedor de cotações atingiu seu limite de requisições. Tente novamente mais tarde; nenhuma cotação antiga foi usada.'};
+        return {error:`Não foi possível consultar uma cotação atual para ${from}/${to}. O par pode não estar disponível ou o provedor está indisponível; nenhuma cotação antiga foi usada.`};
     }
 }
-
-function loadDiskCache() {
-    if (fs.existsSync(cachePath)) {
-        try {
-            const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-            if (data && typeof data === 'object' && data.rates) {
-                return {
-                    timestamp: data.timestamp || 0,
-                    date: data.date || new Date().toISOString(),
-                    rates: data.rates || { BRL: 1.0 },
-                    details: data.details || {},
-                    dynamicRates: data.dynamicRates || {}
-                };
-            }
-        } catch (_) {}
-    }
-    return null;
-}
-
-async function getCache() {
-    if (memoryCache && (Date.now() - memoryCache.timestamp < CACHE_TTL)) {
-        return memoryCache;
-    }
-
-    if (!memoryCache) {
-        const fromDisk = loadDiskCache();
-        if (fromDisk && (Date.now() - fromDisk.timestamp < CACHE_TTL)) {
-            memoryCache = fromDisk;
-            return memoryCache;
-        }
-        if (fromDisk) memoryCache = fromDisk;
-    }
-
-    if (inFlightCachePromise) {
-        return inFlightCachePromise;
-    }
-
-    inFlightCachePromise = (async () => {
-        try {
-            const batchPairs = 'USD-BRL,EUR-BRL,GBP-BRL,JPY-BRL,CAD-BRL,AUD-BRL,CHF-BRL,CNY-BRL,ARS-BRL,CLP-BRL,COP-BRL,UYU-BRL,MXN-BRL,RUB-BRL,INR-BRL,BTC-BRL,ETH-BRL,SOL-BRL,DOGE-BRL,LTC-BRL,XRP-BRL';
-            const response = await axios.get(`https://economia.awesomeapi.com.br/json/last/${batchPairs}`, { timeout: 8000 });
-            const data = response.data;
-            const rates = { BRL: 1.0 };
-            const details = {};
-
-            for (const key of Object.keys(data)) {
-                const item = data[key];
-                const coin = item.code;
-                const bid = parseFloat(item.bid);
-                if (coin && !isNaN(bid)) {
-                    rates[coin] = bid;
-                    details[coin] = {
-                        name: item.name,
-                        bid: bid,
-                        high: parseFloat(item.high) || null,
-                        low: parseFloat(item.low) || null,
-                        pctChange: item.pctChange ? parseFloat(item.pctChange).toFixed(2) : null,
-                        create_date: item.create_date
-                    };
-                }
-            }
-
-            memoryCache = {
-                timestamp: Date.now(),
-                date: new Date().toISOString(),
-                rates: rates,
-                details: details,
-                dynamicRates: memoryCache?.dynamicRates || {}
-            };
-
-            saveCacheToDisk(memoryCache);
-            return memoryCache;
-        } catch (error) {
-            if (memoryCache && memoryCache.rates && Object.keys(memoryCache.rates).length > 1) {
-                return memoryCache;
-            }
-
-            try {
-                const fbRes = await axios.get('https://open.er-api.com/v6/latest/BRL', { timeout: 6000 });
-                if (fbRes.data && fbRes.data.rates) {
-                    const erRates = fbRes.data.rates;
-                    const rates = { BRL: 1.0 };
-                    for (const c of Object.keys(erRates)) {
-                        const rateAgainstBRL = 1 / erRates[c];
-                        if (!isNaN(rateAgainstBRL) && rateAgainstBRL > 0) {
-                            rates[c] = rateAgainstBRL;
-                        }
-                    }
-                    memoryCache = {
-                        timestamp: Date.now(),
-                        date: new Date().toISOString(),
-                        rates: rates,
-                        details: {},
-                        dynamicRates: memoryCache?.dynamicRates || {}
-                    };
-                    saveCacheToDisk(memoryCache);
-                    return memoryCache;
-                }
-            } catch (_) {}
-
-            if (memoryCache && memoryCache.rates) {
-                return memoryCache;
-            }
-
-            throw error;
-        } finally {
-            inFlightCachePromise = null;
-        }
-    })();
-
-    return inFlightCachePromise;
-}
-
-async function convertCurrency(rawAmount, rawFrom, rawTo) {
-    const amount = parseAmount(rawAmount);
-    let from = normalizeCurrency(rawFrom || 'USD');
-    let to = normalizeCurrency(rawTo || 'BRL');
-
-    if (from === to) {
-        return {
-            success: true,
-            from: from,
-            to: to,
-            amount: amount,
-            rate: 1.0,
-            result: amount,
-            name: `${from}/${to}`,
-            lastUpdate: 'Tempo Real'
-        };
-    }
-
-    let cache;
-    try {
-        cache = await getCache();
-    } catch (_) {
-        cache = memoryCache || loadDiskCache() || { rates: { BRL: 1.0 }, dynamicRates: {} };
-    }
-
-    if (cache?.rates && cache.rates[from] !== undefined && cache.rates[to] !== undefined) {
-        const rateFromBRL = cache.rates[from];
-        const rateToBRL = cache.rates[to];
-        const rate = rateFromBRL / rateToBRL;
-        const converted = amount * rate;
-        const detail = cache.details ? (cache.details[from] || cache.details[to]) : null;
-
-        return {
-            success: true,
-            from: from,
-            to: to,
-            amount: amount,
-            rate: rate,
-            result: converted,
-            name: `${from}/${to}`,
-            lastUpdate: detail?.create_date || cache.date || 'Tempo Real',
-            pctChange: detail?.pctChange || null,
-            high: detail?.high || null,
-            low: detail?.low || null
-        };
-    }
-
-    const directKey = `${from}-${to}`;
-    const inverseKey = `${to}-${from}`;
-
-    if (cache?.dynamicRates && cache.dynamicRates[directKey]) {
-        const rateData = cache.dynamicRates[directKey];
-        if (Date.now() - (rateData.timestamp || 0) < CACHE_TTL) {
-            return {
-                success: true,
-                from: from,
-                to: to,
-                amount: amount,
-                rate: rateData.rate,
-                result: amount * rateData.rate,
-                name: rateData.name || `${from}/${to}`,
-                lastUpdate: rateData.lastUpdate,
-                pctChange: rateData.pctChange || null,
-                high: rateData.high || null,
-                low: rateData.low || null
-            };
-        }
-    }
-
-    if (cache?.dynamicRates && cache.dynamicRates[inverseKey]) {
-        const rateData = cache.dynamicRates[inverseKey];
-        if (Date.now() - (rateData.timestamp || 0) < CACHE_TTL) {
-            const invRate = 1 / rateData.rate;
-            return {
-                success: true,
-                from: from,
-                to: to,
-                amount: amount,
-                rate: invRate,
-                result: amount * invRate,
-                name: `${from}/${to} (Inverso de ${rateData.name})`,
-                lastUpdate: rateData.lastUpdate
-            };
-        }
-    }
-
-    try {
-        const response = await axios.get(`https://economia.awesomeapi.com.br/json/last/${from}-${to}`, { timeout: 6000 });
-        const pairKey = Object.keys(response.data)[0];
-        if (pairKey && response.data[pairKey]) {
-            const rateData = response.data[pairKey];
-            const bid = parseFloat(rateData.bid);
-            if (!isNaN(bid)) {
-                if (!cache.dynamicRates) cache.dynamicRates = {};
-                cache.dynamicRates[directKey] = {
-                    rate: bid,
-                    name: rateData.name,
-                    lastUpdate: rateData.create_date,
-                    pctChange: rateData.pctChange ? parseFloat(rateData.pctChange).toFixed(2) : null,
-                    high: parseFloat(rateData.high) || null,
-                    low: parseFloat(rateData.low) || null,
-                    timestamp: Date.now()
-                };
-                saveCacheToDisk(cache);
-
-                return {
-                    success: true,
-                    from: from,
-                    to: to,
-                    amount: amount,
-                    rate: bid,
-                    result: amount * bid,
-                    name: rateData.name,
-                    lastUpdate: rateData.create_date,
-                    pctChange: rateData.pctChange ? parseFloat(rateData.pctChange).toFixed(2) : null,
-                    high: parseFloat(rateData.high) || null,
-                    low: parseFloat(rateData.low) || null
-                };
-            }
-        }
-    } catch (_) {}
-
-    try {
-        const fallbackRes = await axios.get(`https://economia.awesomeapi.com.br/json/last/${to}-${from}`, { timeout: 6000 });
-        const pairKey = Object.keys(fallbackRes.data)[0];
-        if (pairKey && fallbackRes.data[pairKey]) {
-            const rateData = fallbackRes.data[pairKey];
-            const bid = parseFloat(rateData.bid);
-            if (!isNaN(bid) && bid > 0) {
-                const invRate = 1 / bid;
-                if (!cache.dynamicRates) cache.dynamicRates = {};
-                cache.dynamicRates[directKey] = {
-                    rate: invRate,
-                    name: `${from}/${to} (Inverso de ${rateData.name})`,
-                    lastUpdate: rateData.create_date,
-                    timestamp: Date.now()
-                };
-                saveCacheToDisk(cache);
-
-                return {
-                    success: true,
-                    from: from,
-                    to: to,
-                    amount: amount,
-                    rate: invRate,
-                    result: amount * invRate,
-                    name: `${from}/${to} (Inverso de ${rateData.name})`,
-                    lastUpdate: rateData.create_date
-                };
-            }
-        }
-    } catch (_) {}
-
-    try {
-        const fbRes = await axios.get(`https://open.er-api.com/v6/latest/${from}`, { timeout: 6000 });
-        if (fbRes.data && fbRes.data.rates && fbRes.data.rates[to]) {
-            const rate = parseFloat(fbRes.data.rates[to]);
-            if (!isNaN(rate) && rate > 0) {
-                if (!cache.dynamicRates) cache.dynamicRates = {};
-                cache.dynamicRates[directKey] = {
-                    rate: rate,
-                    name: `${from}/${to}`,
-                    lastUpdate: fbRes.data.time_last_update_utc || 'Tempo Real',
-                    timestamp: Date.now()
-                };
-                saveCacheToDisk(cache);
-
-                return {
-                    success: true,
-                    from: from,
-                    to: to,
-                    amount: amount,
-                    rate: rate,
-                    result: amount * rate,
-                    name: `${from}/${to}`,
-                    lastUpdate: fbRes.data.time_last_update_utc || 'Tempo Real'
-                };
-            }
-        }
-    } catch (_) {}
-
-    return { error: `Não consegui a cotação para ${from} -> ${to}. Confira se os códigos da moeda estão corretos (ex: USD, EUR, BTC, BRL).` };
-}
-
-module.exports = {
-    convertCurrency,
-    normalizeCurrency,
-    parseAmount,
-    formatCurrencyNumber,
-    parseCurrencyQuery,
-    getCache
-};
+module.exports = {convertCurrency,normalizeCurrency,parseAmount,formatCurrencyNumber,parseCurrencyQuery};

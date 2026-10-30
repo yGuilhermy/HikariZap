@@ -1,30 +1,46 @@
 {
-  "name": "jarvisgpt",
-  "version": "1.6.0",
-  "description": "Um bot Discord com IA.",
+  "name": "hikari-zap",
+  "version": "2.0.0",
+  "description": "Hikari para conversas privadas e grupos no WhatsApp.",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yGuilhermy/HikariZap.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yGuilhermy/HikariZap/issues"
+  },
+  "homepage": "https://github.com/yGuilhermy/HikariZap#readme",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test tests/zap/*.test.js",
+    "check": "node scripts/check.js",
+    "validate:tools": "node scripts/validate-tools.js",
+    "config:check": "node scripts/config-status.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "ai",
+    "agent",
+    "baileys",
+    "gemini",
+    "hikari"
+  ],
+  "author": "Guilhermy",
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
-    "@discordjs/rest": "^1.7.1",
-    "@discordjs/voice": "^0.19.2",
     "@gradio/client": "^1.15.2",
     "axios": "^1.13.4",
+    "baileys": "6.7.24",
     "cheerio": "^1.2.0",
-    "discord-api-types": "^0.37.100",
-    "discord.js": "^14.15.2",
     "dotenv": "^16.5.0",
-    "duck-duck-scrape": "^2.2.7",
-    "duckduckgo-search": "^1.0.7",
     "form-data": "^4.0.5",
-    "libsodium-wrappers": "^0.7.15",
-    "opusscript": "^0.0.8",
-    "prism-media": "^1.3.5",
-    "rcon": "^1.1.0",
-    "tiktokapi-src": "^1.2.0"
+    "ipaddr.js": "^2.2.0",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.5"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

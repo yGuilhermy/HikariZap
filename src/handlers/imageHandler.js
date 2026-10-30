@@ -1,7 +1,7 @@
+const {logger} = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
-require('dotenv').config();
 
 const SAFETY_NEGATIVE_BASE = 'nsfw, nude, explicit, gore, violence, blood, adult content, 18+, pornographic, sexual, disturbing, hentai, r18, genitals, suggestive, semi-nude';
 
@@ -14,7 +14,7 @@ function enforceSafetyNegative(negativePrompt = '') {
 }
 
 function getTempImagePath(ext = 'png', seed = 'na') {
-    const tempDir = path.join(__dirname, '../data/temp_images');
+    const tempDir = path.join(config.dataDir,'temp_images');
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     return path.join(tempDir, `image_${Date.now()}_${seed}.${ext}`);
 }
@@ -45,7 +45,7 @@ async function translateToEnglish(text) {
 async function tryFluxSpace(prompt, negativePrompt, width, height) {
     const hfToken = config.hfToken;
     if (!hfToken) throw new Error('HF_TOKEN não configurado');
-    console.log('[Image 3/3] Tentando FLUX.1 Oficial (HuggingFace Space)...');
+    logger.info('[Image 3/3] Tentando FLUX.1 Oficial (HuggingFace Space)...');
     const { Client } = await import('@gradio/client');
     const client = await Client.connect('black-forest-labs/FLUX.1-schnell', { hf_token: hfToken });
     const seed = Math.floor(Math.random() * 1_000_000_000);
@@ -65,14 +65,14 @@ async function tryFluxSpace(prompt, negativePrompt, width, height) {
     const buffer = Buffer.from(await imageResponse.arrayBuffer());
     const localFilePath = getTempImagePath('webp', actualSeed);
     fs.writeFileSync(localFilePath, buffer);
-    console.log(`[Image 3/3] FLUX.1 imagem salva: ${localFilePath}`);
+    logger.info(`[Image 3/3] FLUX.1 imagem salva: ${localFilePath}`);
     return { imageUrl: null, localFilePath, actualSeed, modelName: 'FLUX.1-schnell (Official Space)' };
 }
 
 async function tryPollinations(prompt, negativePrompt, width, height, customModel = null) {
     const isAnimePrompt = /anime|manga|kawaii|hikari|waifu|illustration|chibi|2d/i.test(prompt);
     const model = customModel || (isAnimePrompt ? 'flux-anime' : 'flux');
-    console.log(`[Image 1/3] Tentando Pollinations AI (${model})...`);
+    logger.info(`[Image 1/3] Tentando Pollinations AI (${model})...`);
     const encodedPrompt = encodeURIComponent(prompt);
     const encodedNegative = encodeURIComponent(negativePrompt || '');
     const seed = Math.floor(Math.random() * 1e9);
@@ -82,7 +82,7 @@ async function tryPollinations(prompt, negativePrompt, width, height, customMode
         try {
             const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
             if (res.status === 429) {
-                console.warn(`[Pollinations] 429 (fila ocupada), tentativa ${attempt}/2. Aguardando 2.5s...`);
+                logger.warn(`[Pollinations] 429 (fila ocupada), tentativa ${attempt}/2. Aguardando 2.5s...`);
                 if (attempt < 2) {
                     await new Promise(r => setTimeout(r, 2500));
                     continue;
@@ -96,7 +96,7 @@ async function tryPollinations(prompt, negativePrompt, width, height, customMode
             if (!buffer.length) throw new Error('Buffer vazio recebido');
             const localFilePath = getTempImagePath('png', seed);
             fs.writeFileSync(localFilePath, buffer);
-            console.log(`[Image 1/3] Pollinations imagem salva: ${localFilePath}`);
+            logger.info(`[Image 1/3] Pollinations imagem salva: ${localFilePath}`);
             return { imageUrl: null, localFilePath, actualSeed: seed, modelName: `Pollinations (${model})` };
         } catch (err) {
             if (attempt === 2 || err.name === 'TimeoutError') throw err;
@@ -108,13 +108,13 @@ async function tryPollinations(prompt, negativePrompt, width, height, customMode
 
 async function tryStableHorde(prompt, negativePrompt, width, height) {
     const apiKey = config.hordeImageApiKey || '0000000000';
-    console.log('[Image 2/3] Tentando Stable Horde...');
+    logger.info('[Image 2/3] Tentando Stable Horde...');
     const submitRes = await fetch('https://stablehorde.net/api/v2/generate/async', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'apikey': apiKey,
-            'Client-Agent': 'HikariBot:3.0:github.com/yguilhermy/Hikari',
+            'Client-Agent': 'HikariZap:2.0:Guilhermy',
         },
         body: JSON.stringify({
             prompt: negativePrompt ? `${prompt} ### ${negativePrompt}` : prompt,
@@ -141,7 +141,7 @@ async function tryStableHorde(prompt, negativePrompt, width, height) {
     }
     const { id } = await submitRes.json();
     if (!id) throw new Error('Stable Horde não retornou ID de job');
-    console.log(`[Image 2/3] Stable Horde job ID: ${id} — aguardando...`);
+    logger.info(`[Image 2/3] Stable Horde job ID: ${id} — aguardando...`);
 
     for (let attempt = 0; attempt < 14; attempt++) {
         await new Promise(r => setTimeout(r, 3000));
@@ -149,7 +149,7 @@ async function tryStableHorde(prompt, negativePrompt, width, height) {
         if (!checkRes.ok) continue;
         const checkData = await checkRes.json();
         if (checkData.queue_position > 150) {
-            console.warn(`[Stable Horde] Fila excessiva (${checkData.queue_position} pessoas > 150). Abortando.`);
+            logger.warn(`[Stable Horde] Fila excessiva (${checkData.queue_position} pessoas > 150). Abortando.`);
             throw new Error(`Fila do Stable Horde muito cheia (${checkData.queue_position} na frente)`);
         }
         if (checkData.done) {
@@ -170,7 +170,7 @@ async function tryStableHorde(prompt, negativePrompt, width, height) {
                 const seed = generation?.seed || Math.floor(Math.random() * 1e9);
                 const localFilePath = getTempImagePath('png', seed);
                 fs.writeFileSync(localFilePath, buffer);
-                console.log(`[Image 2/3] Stable Horde imagem salva: ${localFilePath}`);
+                logger.info(`[Image 2/3] Stable Horde imagem salva: ${localFilePath}`);
                 return { imageUrl: null, localFilePath, actualSeed: seed, modelName: `${hordeModel} (Stable Horde)` };
             }
             throw new Error('Stable Horde não retornou imagem válida');
@@ -185,10 +185,7 @@ async function generateImage(prompt, negativePrompt = '', width = 1024, height =
     const { provider = 'auto', bypassSafety = false } = options;
     const translatedPrompt = await translateToEnglish(prompt);
     const translatedNegative = negativePrompt ? await translateToEnglish(negativePrompt) : '';
-    console.log(`[IMAGE/FULL_PROMPT]: "${prompt}"`);
-    console.log(`[IMAGE/TRANSLATED]: "${translatedPrompt}"`);
-    console.log(`[IMAGE/NEGATIVE]: "${translatedNegative}"`);
-    console.log(`[IMAGE/PARAMS]: Provedor: ${provider} | Resolução: ${width}x${height}`);
+    logger.info(`[IMAGE/PARAMS]: Provedor: ${provider} | Resolução: ${width}x${height}`);
     const finalNegative = bypassSafety ? translatedNegative : enforceSafetyNegative(translatedNegative);
     const allProviders = [
         { id: 'pollinations', name: 'Pollinations AI', fn: tryPollinations },
@@ -205,9 +202,8 @@ async function generateImage(prompt, negativePrompt = '', width = 1024, height =
             const result = await p.fn(translatedPrompt, finalNegative, width, height);
             if (result) {
                 const durationMs = Date.now() - startTime;
-                console.log(`[ImageHandler] ✅ Sucesso via ${p.name} em ${durationMs}ms | Seed: ${result.actualSeed} | Arquivo: ${result.localFilePath}`);
-                const telemetryLogger = require('../utils/telemetryLogger');
-                telemetryLogger.image({
+                logger.info(`[ImageHandler]  Sucesso via ${p.name} em ${durationMs}ms | Seed: ${result.actualSeed} | Arquivo: ${result.localFilePath}`);
+                logger.image({
                     model: result.modelName || p.name,
                     provider: p.name,
                     width,
@@ -218,12 +214,11 @@ async function generateImage(prompt, negativePrompt = '', width = 1024, height =
                 return result;
             }
         } catch (err) {
-            console.warn(`[ImageHandler] ❌ ${p.name} falhou: ${err.message}`);
+            logger.warn(`[ImageHandler]  ${p.name} falhou: ${err.message}`);
         }
     }
-    console.error(`[ImageHandler] CRITICAL: Fallback failed para lista de provedores (${providersToTry.map(p => p.id).join(', ')}).`);
-    const telemetryLogger = require('../utils/telemetryLogger');
-    telemetryLogger.error({
+    logger.error(`[ImageHandler] CRITICAL: Fallback failed para lista de provedores (${providersToTry.map(p => p.id).join(', ')}).`);
+    logger.error({
         category: 'IMAGE',
         message: `Falha na geração de imagem (${width}x${height}) após tentar provedores`
     });

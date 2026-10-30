@@ -1,201 +1,148 @@
-# 🎮 Guia Avançado de Comandos / Advanced Commands Guide
+# 🎮 Guia Completo de Comandos (WhatsApp Edition)
 
-Este documento detalha todos os comandos slash (/) disponíveis na Hikari, suas funcionalidades, parâmetros e permissões.
+Este documento descreve detalhadamente todos os comandos disponíveis na HikariZap, suas sintaxes, parâmetros aceitos e permissões de acesso.
 
 ---
 
 ## 📂 Sumário
 
-1. [🧠 IA & Chat](#-ia--chat)
-2. [🎨 Imagens & Arte](#-imagens--arte)
-3. [🎵 Multimídia & Utilidades](#-multimídia--utilidades)
-4. [🎮 Jogos & Downloads](#-jogos--downloads)
-5. [🏪 Consulta na Loja](#-consulta-na-loja)
-6. [⚙️ Configuração & Administração](#-configuração--administração)
-7. [💡 Dicas de Especialista](#-dicas-de-especialista)
+1. [⌨️ 1. Prefixos e Formato de Entrada](#-1-prefixos-e-formato-de-entrada)
+2. [🧠 2. IA, Fala e Transcrição](#-2-ia-fala-e-transcrição)
+3. [🖼️ 3. Figurinhas e Processamento de Imagens](#-3-figurinhas-e-processamento-de-imagens)
+4. [🎮 4. Jogos, Torrents e Consultas](#-4-jogos-torrents-e-consultas)
+5. [🎵 5. Downloads de Mídia e Música](#-5-downloads-de-mídia-e-música)
+6. [🛠️ 6. Comandos Utilitários de Chat](#-6-comandos-utilitários-de-chat)
+7. [👑 7. Comandos de Administração (Owner Only)](#-7-comandos-de-administração-owner-only)
+8. [💡 Dicas de Especialista](#-dicas-de-especialista)
 
 ---
 
-## 🧠 IA & Chat
+## ⌨️ 1. Prefixos e Formato de Entrada
 
-### `/ia_chat`
-
-O comando principal para interagir com o cérebro da Hikari.
-
-- **Prompt:** Sua pergunta ou pedido.
-- **Visibilidade:** Escolha entre `Público` (todos veem) ou `Privado` (apenas você vê).
-- **Advanced:** Se você mencionar outras pessoas no prompt, a Hikari pode tentar entender o contexto da conversa.
-
-### `/chat_resumo`
-
-Faz a leitura das últimas mensagens e gera um resumo inteligente.
-
-- **Quantidade:** O número de mensagens a analisar (Min: 10, Max: 100).
-- **Advanced:** Útil para entender discussões longas que você perdeu.
-
-### `/chat_humor` (Admin)
-
-Altera a "alma" da Hikari em um canal específico.
-
-- **Instrucao:** Novas regras de comportamento (ex: "Fale como um pirata").
-- **Mood:** Estado emocional (ex: "Brava", "Feliz").
-- **Reset:** Volta às configurações padrão.
-- **Advanced:** Essas mudanças persistem apenas no canal onde foram aplicadas.
-
-### `/chat_espontaneo` (Dono)
-
-Configura a Hikari para se intrometer nas conversas sem ser chamada.
-
-- **Estado:** Ativar ou Desativar.
-- **Frequência:** Escolha entre `Baixa`, `Média` ou `Alta`.
-- **Porcentagem (🔒 Dono):** Chance exata (0-100%) para cada mensagem recebida no canal.
+- **Prefixo Principal:** `>` (exemplo: `>ajuda`, `>sticker`).
+- **Prefixo Alternativo:** `/` (exemplo: `/ajuda`, `/sticker`).
+- **Linguagem Natural (Zero Prefixo):** Em chats privados ou ao chamar por "Hikari" em grupos, você pode formular pedidos livres como *"Hikari, pesquise o clima hoje"* ou *"Faz figurinha disso"*, citando a imagem.
 
 ---
 
-## 🎨 Imagens & Arte
+## 🧠 2. IA, Fala e Transcrição
 
-### `/ia_imagem`
+### `>pesquisa <assunto>`
+Pesquisa na internet em tempo real e entrega um resumo direto no chat.
+- **Exemplo:** `>pesquisa novidades do lançamento do GTA 6`
 
-Gera imagens usando diversos modelos de difusão.
+### `>imagem <descrição>`
+Gera imagens artísticas com inteligência artificial via Pollinations ou Stability AI.
+- **Exemplo:** `>imagem uma cidade cyberpunk à noite sob chuva neon, 4k`
 
-- **Prompt:** Descrição detalhada do que você quer.
-- **Negative Prompt:** O que você NÃO quer na imagem.
-- **Width/Height:** Dimensões da imagem (512px a 1280px).
-- **Provider:** Escolha o gerador (Stability, HuggingFace, Pollinations, etc).
-- **Advanced:** O modo `Auto` tentará os provedores em sequência até um funcionar.
+### `>audio <pergunta>`
+Pergunta algo para a Hikari e recebe a resposta sintetizada em áudio de voz natural no WhatsApp (PTT).
+- **Exemplo:** `>audio me conte uma curiosidade sobre o espaço`
 
----
+### `>falar <texto>`
+Lê em voz alta o texto enviado, gerando um arquivo de áudio falado.
+- **Exemplo:** `>falar bom dia grupo, que todos tenham uma excelente semana!`
 
-## 🎙️ Voz & Calls
-
-### `/entrar-call`
-
-Conecta a Hikari ao seu canal de voz atual para atendimento inteligente por voz.
-
-- **Advanced:** A Hikari escuta os usuários no canal de voz e responde ao ouvir o gatilho "Hikari" (ou equivalências fonéticas). Suporta nativamente o protocolo DAVE (E2EE) de criptografia do Discord e filtro de silêncio por RMS de áudio.
-
-### `/sair-call`
-
-Desconecta a Hikari do canal de voz em que ela está conectada no servidor.
-
-- **Advanced:** Pode ser acionado via comando slash, voz ("Hikari, saia da call") ou via ferramenta MCP. Desconecta automaticamente em caso de inatividade quando todos os usuários saem da call.
+### `>transcrever`
+Transcreve o áudio anexado ou uma mensagem de voz que você esteja respondendo (quote/reply).
+- **Uso:** Responda a um áudio com o comando `>transcrever`.
 
 ---
 
-## 🎵 Multimídia & Utilidades
+## 🖼️ 3. Figurinhas e Processamento de Imagens
 
-### `/baixar_musica`
+### `>sticker [descrição]` / `>figurinha [descrição]`
+Converte imagens, fotos, GIFs ou vídeos de até 10 segundos em figurinhas do WhatsApp (512×512) com transparência perfeita e sem cortes distorcidos.
+- **Uso:** Envie uma foto/vídeo com a legenda `>sticker` ou responda a uma foto existente no chat. A descrição opcional define o texto embutido nos metadados do pacote.
 
-Extrai e converte o áudio de vídeos em formato MP3.
+### `>toimg` / `>sticker2image`
+Converte uma figurinha recebida de volta para formato de imagem:
+- **Figurinha Estática:** Retorna um arquivo PNG transparente com alta resolução.
+- **Figurinha Animada:** Converte para um arquivo `.gif` completo com todos os frames preservados.
+- **Uso:** Responda a uma figurinha no chat com o comando `>toimg`.
 
-- **URL:** O link do vídeo (YouTube, Instagram Reels, TikTok ou Twitter/X).
-- **Advanced:** Utiliza `yt-dlp` para baixar a melhor qualidade de áudio e `ffmpeg` para converter em MP3 de forma limpa, limpando os arquivos locais em seguida.
-
-### `/baixar_musica_deezer`
-
-Busca e baixa faixas de música de alta qualidade diretamente do catálogo Deezer pelo nome da música ou artista.
-
-- **Nome:** O nome da música e/ou artista que deseja pesquisar e baixar.
-- **Advanced:** Utiliza a API REST do Deezer e o motor `deemix` para baixar o áudio de estúdio oficial em MP3 HQ. Possui um algoritmo de pontuação de fidelidade (Match Confidence Score) e exibe um menu de seleção interativo caso haja ambiguidade. Os arquivos baixados são 100% temporários e removidos imediatamente após o envio.
-
-### `/baixar_video`
-
-Baixa vídeos e envia em formato MP4 no chat do Discord.
-
-- **URL:** O link do vídeo (YouTube Shorts, Instagram Reels, TikTok ou Twitter/X).
-- **Descricao (Boolean):** Se verdadeiro, exibe o autor e a descrição do vídeo original na mensagem. Padrão: `false`.
-- **Advanced:** Detecta o limite de upload do servidor para aplicar compressão de vídeo em FFMPEG se ultrapassar os limites do Discord. Oferece fila de compressão assíncrona.
-
-### `/anime_origem`
-
-Identifica um anime através de um print/imagem.
-
-- **Imagem:** Upload de um arquivo.
-- **URL:** Link direto para a imagem.
-- **Advanced:** Usa a API Trace.moe para encontrar o episódio e o tempo exato da cena.
-
-### `/converter_moeda`
-
-Converte moedas fiduciárias e criptomoedas em tempo real.
-
-- **Valor:** Montante numérico a ser convertido.
-- **De:** Código de origem (Ex: USD, EUR, BTC).
-- **Para:** Código de destino (Ex: BRL).
-- **Advanced:** Utiliza uma API de câmbio em tempo real integrada com cache físico diário (JSON) no bot e fallback inteligente para moedas menos comuns. Totalmente integrada à IA via chat.
+### `>anime`
+Identifica a origem de uma cena de anime a partir de um print ou imagem.
+- **Uso:** Envie uma imagem com a legenda `>anime` ou responda a uma imagem com o comando.
+- **Retorno:** Nome do anime, episódio e minutagem aproximada da cena.
 
 ---
 
-## 🎮 Jogos & Downloads
+## 🎮 4. Jogos, Torrents e Consultas
 
-### `/buscar_jogo`
+### `>torrent <nome>` / `>buscar_jogo <nome>`
+Busca repacks de jogos nos catálogos locais da FitGirl e DODI.
+- **Exemplo:** `>torrent Dark Souls 3`
+- **Retorno:** Uma lista numerada de até 5 resultados contendo título, tamanho e data.
 
-Procura torrents/magnets de jogos de forma abrangente.
+### `>torrent <número>` (ou apenas o número em resposta)
+Seleciona o item da busca anterior ou citada e envia o arquivo de texto `.txt` com o magnet link validado.
+- **Exemplo:** Responda à lista da Hikari digitando apenas `1` ou `>torrent 1`.
+- **Duração:** A lista fica indexada em memória por 10 minutos vinculada ao seu remetente.
 
-- **Nome:** Título do jogo.
-- **Advanced:** Pesquisa refinada nas bases de dados da FitGirl e DODI Repacks. Agora inclui um paginador com botões para alternar as páginas de 5 em 5 itens diretamente no Discord.
+### `>steam <nome>`
+Consulta os dados oficiais de um jogo na loja da Steam.
+- **Exemplo:** `>steam Portal 2`
+- **Retorno:** Preço atual, desconto, desenvolvedora, plataformas e breve comentário da IA.
+
+### `>moeda <valor> <DE> <PARA>`
+Converte valores entre moedas fiduciárias ou criptomoedas em tempo real.
+- **Exemplo:** `>moeda 50 USD BRL`
+- **Exemplo Cripto:** `>moeda 1 BTC USD`
+- **Retorno:** Valor convertido, cotação utilizada, fonte oficial e data do registro.
 
 ---
 
-## 🏪 Consulta na Loja
+## 🎵 5. Downloads de Mídia e Música
 
-### `/steam_jogo`
+### `>musica <nome e artista>`
+Busca e faz o download de faixas de estúdio em alta qualidade (HQ MP3 / 320kbps) direto pelo catálogo Deezer via `deemix`.
+- **Exemplo:** `>musica Bohemian Rhapsody Queen`
+- **Retorno:** Arquivo de áudio MP3 enviado no chat com metadados e capa.
 
-Consulta informações oficiais, preço e status na loja da Steam.
+### `>baixar_audio <URL>`
+Extrai e converte a trilha sonora de vídeos e áudios da internet para formato de áudio.
+- **Exemplo:** `>baixar_audio https://www.youtube.com/watch?v=...`
 
-- **Nome:** Nome do jogo para pesquisar.
-- **Advanced:** Retorna preço regional, porcentagem de desconto, desenvolvedores e pontuação do Metacritic. A IA fará um pequeno comentário sobre o preço ou o jogo se os servidores estiverem online.
+### `>baixar_video <URL>`
+Baixa vídeos da internet (YouTube Shorts, Instagram Reels, TikTok, Twitter/X) e envia diretamente no chat.
+- **Exemplo:** `>baixar_video https://www.instagram.com/reel/...`
 
 ---
 
-## ⚙️ Configuração & Administração
+## 🛠️ 6. Comandos Utilitários de Chat
 
-### `/config_servidor` (Server Admin)
+### `>limpar`
+Limpa o histórico recente das 15 mensagens da conversa em memória.
+- **No Privado:** Qualquer usuário pode executar para reiniciar sua sessão.
+- **Em Grupos:** Apenas administradores do grupo ou o proprietário do bot podem acionar.
 
-Painel gráfico unificado e público no chat para administração do servidor.
+### `>ajuda`
+Exibe a lista consolidada com as principais ferramentas e comandos rápidos da Hikari.
 
-- **Personalidade & Humor:** Define instruções customizadas (prompts) e estados emocionais para a IA no canal.
-- **Mensagens Espontâneas:** Controla o status (ativado/desativado) e a frequência em que a IA se intromete nas conversas.
-- **Canal de Updates:** Define o canal oficial para receber comunicados de atualizações.
-- **Respostas a Mentions:** Configura se a IA deve responder quando o servidor for mencionado em `@everyone` ou `@here`.
-- **Ferramentas MCP:** Abre o Gerenciador Gráfico de Ferramentas MCP com lista de ativas/desativadas, descrições detalhadas e botões de ativar/desativar.
+### `>termos`
+Mostra detalhes transparentes sobre a política de dados, retenção de contexto e privacidade do bot.
 
-### `/config_criador` (Dono / Criador)
+---
 
-Central de Controle Master para gerenciamento global da rede Hikari (oculta e restrita ao criador).
+## 👑 7. Comandos de Administração (Owner Only)
 
-- **Subcomando `painel` / `dashboard`:** Abre o Dashboard Master por botões.
-- **Modelos:** Configura o modelo LLM ativo e exibição de modelo/pensamento.
-- **Banir / Desbanir / Lista de Bans:** Gerencia a lista negra global de usuários, servidores e canais banidos.
-- **AutoMod:** Alterna o modo de moderação automática (Off / Monitor / Strict).
-- **Ferramentas MCP:** Gerencia a ativação de ferramentas MCP por servidor.
-- **Banco de Dados Permanente:** Gerencia permissões globais de leitura, escrita, edição e exclusão na memória persistente da IA.
-- **Bot Config:** Abre as configurações de Runtime da IA.
+Estes comandos operam exclusivamente para os telefones configurados em `WHATSAPP_OWNER_NUMBERS`:
 
-### `/ia_ferramentas` (Server Admin)
-
-Comando independente para administradores de servidor gerenciarem as ferramentas da IA.
-
-- **Ação `list`:** Exibe um embed público com as ferramentas MCP ativas e desativadas no servidor.
-- **Ação `toggle`:** Alterna a disponibilidade de uma ferramenta específica (`join_voice_call`, `search_game`, `generate_image`, `db_read`, `db_write`, `db_edit`, `db_delete`, etc.).
-- **Ação `reset`:** Restaura as ferramentas do servidor para os padrões de fábrica.
-
-### `/aceitar_tos` (Server Admin)
-
-Exibe e registra o aceite dos Termos de Serviço da Hikari para liberar e autorizar as funções do bot no servidor.
-
-### `/ia_config` (Dono)
-
-Ajusta parâmetros técnicos de baixo nível dos modelos de IA (`Timeout`, `Temperatura`, `Max Tokens`).
+| Comando | Descrição |
+| :--- | :--- |
+| `>pausar` | Congela temporariamente o atendimento da Hikari a novas mensagens de usuários. |
+| `>retomar` | Descongela o atendimento da Hikari e volta ao estado operacional normal. |
+| `>fila` | Exibe o status da fila de mensagens, tarefas ativas e tamanho do processamento atual. |
 
 ---
 
 ## 💡 Dicas de Especialista
 
-- 💡 **Privacidade em Primeiro Lugar:** Use o parâmetro `visibilidade: Privado` no comando `/ia_chat` para tratar de assuntos sensíveis ou evitar poluir o chat com textos longos da IA.
-- 💡 **Qualidade de Imagem:** Ao usar `/ia_imagem`, capriche no `negative_prompt` com termos como `blurry, deformed, low quality` para forçar a IA a gerar resultados mais nítidos.
-- 💡 **Multiversidade de IAs:** Se um provedor de imagem estiver lento, experimente trocar o `provider` manualmente. O `Pollinations` é geralmente o mais estável, com suporte a modelos FLUX.
-- 💡 **Histórico de Contexto:** A Hikari "lembra" das últimas mensagens do canal. Use isso a seu favor ao pedir resumos ou continuar uma conversa sem precisar repetir tudo.
+- 💡 **Acesso Rápido a Figurinhas:** Ao responder uma figurinha com `>toimg`, a Hikari gera a imagem em menos de 1 segundo. Se enviar uma foto com `>figurinha`, ela já é convertida diretamente.
+- 💡 **Uso em Grupos:** Para evitar excesso de mensagens em grupos movimentados, o bot ignora falas comuns entre membros e só responde quando expressamente solicitado.
 
 ---
 
-[🏠 Voltar ao Menu Principal](../README.md)
+[🏠 Voltar ao Menu Principal](./README.md)
+
