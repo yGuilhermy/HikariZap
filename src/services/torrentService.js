@@ -30,6 +30,8 @@ async function searchGames(query, signal) {
     ).filter(game=>{if(seen.has(game.hash))return false;seen.add(game.hash);return true;}).slice(0,5);
 }
 
+// Locate the raw bencoded info dictionary so its SHA-1 can be compared to the
+// selected magnet. HTML error pages and unrelated torrents must never be sent.
 function validateTorrent(buffer, hash) {
     let offset=0,info;
     function parse(depth=0,root=false) {

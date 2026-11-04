@@ -22,6 +22,7 @@ class IdentityMap {
             } catch { this.lidToPn.clear(); logger.warn('Cache PN/LID inválido; identidades desconhecidas permanecerão sem privilégios até serem informadas pelo WhatsApp.'); }
         }
     }
+    // Call only with server-origin identity fields, never quoted text, mentions or profile names.
     learn(ids) {
         const values=[...new Set(ids.map(userJid).filter(Boolean))];
         const phones=values.filter(isPhoneJid),lids=values.filter(isLidJid);

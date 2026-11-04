@@ -237,6 +237,7 @@ async function awesomeQuote(from, to, signal) {
     let quote;
     try { quote = await request(from,to); }
     catch (error) {
+        // Only try an inverse pair when the requested pair does not exist.
         if (signal?.aborted || Number(error.response?.status) !== 404) throw error;
         try {
             const inverse = await request(to,from);
@@ -269,6 +270,7 @@ async function convertCurrency(rawAmount, rawFrom, rawTo, signal) {
     try {
         const provider = config.currencyProvider || 'awesomeapi';
         if (!['awesomeapi','frankfurter'].includes(provider)) return {error:'CURRENCY_PROVIDER inválido; use awesomeapi ou frankfurter.'};
+        // Each conversion fetches the requested pair. No local cache or stale fallback.
         const quote = await (provider === 'frankfurter' ? frankfurterQuote : awesomeQuote)(from,to,signal);
         signal?.throwIfAborted();
         const result = amount * quote.rate;

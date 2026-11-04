@@ -120,15 +120,17 @@ test('fila limita concorrência, cancela pendências e permite retomada', async 
     const queue=new Queue(2);let release;let active=0,max=0;
     const first=queue.enqueue('a',async signal=>{active++;max=Math.max(max,active);await new Promise(r=>{release=r;});active--;return signal.aborted;});
     const second=queue.enqueue('b',async()=>1);const cancelled=assert.rejects(second,/cancelada/);
-    queue.pause();release();assert.equal(await first,true);await cancelled;assert.equal(max,1);
+    const activeCancelled=assert.rejects(first,error=>error.code==='QUEUE_CANCELLED');
+    queue.pause();release();await activeCancelled;await cancelled;assert.equal(max,1);
     await assert.rejects(queue.enqueue('a',async()=>1),/pausada/);
     queue.resume();assert.equal(await queue.enqueue('a',async()=>3),3);
     const slow=queue.enqueue('c',async signal=>new Promise(r=>signal.addEventListener('abort',()=>r('interrompido'))));
     const pending=queue.enqueue('c',async()=>'fila');
     const pWait=assert.rejects(pending,/cancelada/);
+    const slowWait=assert.rejects(slow,error=>error.code==='QUEUE_CANCELLED');
     const cancelRes=queue.cancel('c');
     assert.deepEqual(cancelRes,{aborted:true,dropped:1});
-    assert.equal(await slow,'interrompido');
+    await slowWait;
     await pWait;
 });
 test('dono exige identificador de telefone configurado; usuário não pode pausar e comando cancelar funciona', async t=>{

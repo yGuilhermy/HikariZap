@@ -27,6 +27,8 @@ test('falha de envio não marca a nota como recebida',async t=>{
     t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
     const store=new Store(dir),sender='5511999999999@s.whatsapp.net';
     const router=createRouter({store,agent:async()=> 'Olá!'});
-    await assert.rejects(router.handle({id:'1',text:'oi',senderId:sender,chatId:sender,send:async()=>{throw new Error('Envio falhou');}}));
+    const reactions=[];
+    await router.handle({id:'1',text:'oi',senderId:sender,chatId:sender,react:async emoji=>reactions.push(emoji),send:async()=>{throw new Error('Envio falhou');}});
+    assert.deepEqual(reactions,['\u274c']);
     assert.equal(store.helpNotified(sender),false);
 });

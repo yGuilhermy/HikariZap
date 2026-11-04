@@ -116,7 +116,7 @@ function getTelemetryText(message, queue, isOwner, now = Date.now()) {
 
 *Bot*
 • Ping até esta resposta: ${latency} ms
-• Fila: ${queue.active ? 1 : 0} ativa, ${queue.items.length} aguardando
+• Fila: ${queue.activeCount ?? (queue.active ? 1 : 0)} ativa, ${queue.items.length} aguardando
 • Pausada: ${queue.paused ? 'sim' : 'não'}
 • Uptime: ${formatDuration(process.uptime())}
 • Memória: ${Math.round(memory.rss / 1048576)} MB RSS / ${Math.round(memory.heapUsed / 1048576)} MB heap
@@ -127,14 +127,16 @@ function getTelemetryText(message, queue, isOwner, now = Date.now()) {
 • Fuso horário: America/Sao_Paulo
 • Horário: ${new Date(now).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}`;
 }
-function createRouter({store, queue = new Queue(config.maxQueue), executeTool = createToolExecutor(), agent, transcribe, describe, stickerService} = {}) {
+function queueOptions() { return {concurrency:config.queueConcurrency,perChatLimit:config.maxQueuePerChat,maxWaitMs:config.queueWaitMs,taskTimeoutMs:config.queueTaskTimeout}; }
+function createRouter({store, queue = new Queue(config.maxQueue,queueOptions()), executeTool = createToolExecutor(), agent, transcribe, describe, stickerService} = {}) {
     if (!store) throw new Error('Armazenamento obrigatório.');
-    const ownerQueue = new Queue(config.maxQueue);
+    const ownerQueue = new Queue(config.maxQueue,{...queueOptions(),concurrency:1});
+    const availabilityNotices = new Map();
     agent ||= (...args) => require('../handlers/llmHandler').executeAgentLoop(...args);
     transcribe ||= async (media, signal) => {
         const wav = await require('../services/mediaService').toWav(media.buffer,signal);
         signal?.throwIfAborted();
-        const text = await require('../services/sttService').transcribeAudio(wav,'speech.wav');
+        const text = await require('../services/sttService').transcribeAudio(wav,'speech.wav',signal);
         signal?.throwIfAborted();
         if (typeof text !== 'string' || !text.trim()) throw new Error('Transcrição indisponível; configure um provedor STT.');
         return text;
@@ -182,14 +184,16 @@ function createRouter({store, queue = new Queue(config.maxQueue), executeTool = 
             const sendText = text => sendReply({text:String(text)});
             if (['cancelar','parar'].includes(cmd.name)) {
                 logger.command(`${config.prefix || '>'}${cmd.name} acionado por "${message.senderName}" no chat ${message.chatId}`);
-                const res = queue.cancel(isOwner ? null : message.chatId);
+                const main = queue.cancel(isOwner ? null : message.chatId);
+                const owner = ownerQueue.cancel(isOwner ? null : message.chatId);
+                const res = {aborted:main.aborted||owner.aborted,dropped:main.dropped+owner.dropped};
                 if (res.aborted || res.dropped) return sendText('Operação cancelada com sucesso.');
                 return sendText('Nenhuma operação em andamento para cancelar.');
             }
             if (isOwner && ['pausar','retomar','fila'].includes(cmd.name)) {
-                if (cmd.name === 'pausar') { queue.pause(); return sendText('Hikari pausada. A fila foi cancelada.'); }
-                if (cmd.name === 'retomar') { queue.resume(); return sendText('Hikari retomada.'); }
-                if (cmd.name === 'fila') return sendText(`Ativa: ${queue.active ? 1 : 0}; aguardando: ${queue.items.length}; pausada: ${queue.paused}.`);
+                if (cmd.name === 'pausar') { queue.pause(); return message.react?.('\u23f8\ufe0f'); }
+                if (cmd.name === 'retomar') { queue.resume(); return message.react?.('\u25b6\ufe0f'); }
+                if (cmd.name === 'fila') return sendText(`Ativa: ${queue.activeCount ?? (queue.active ? 1 : 0)}; aguardando: ${queue.items.length}; pausada: ${queue.paused}.`);
             }
             if (queue.paused && !isOwner) return sendText('A Hikari está pausada para manutenção.');
             if (['ajuda','help'].includes(cmd.name)) return sendText(getHelpText());
@@ -224,9 +228,9 @@ function createRouter({store, queue = new Queue(config.maxQueue), executeTool = 
                         signal.throwIfAborted();
                         const tool = (name,args) => executeTool(name,args,ctx);
                         if (['limpar','hdel'].includes(cmd.name)) {
-                            if (message.isGroup && !isOwner) return sendReply({text:'Apenas o dono pode limpar o contexto compartilhado do grupo.'});
+                            if (message.isGroup && !isOwner) return message.react?.('\ud83d\udd12');
                             store.clearHistory(message.chatId);
-                            return sendReply({text:'Contexto desta conversa apagado.'});
+                            return message.react?.('\ud83e\uddf9');
                         }
                         store.addHistory(message.chatId,'user',recordText(message.text || '[Anexo recebido]'));
                         if (cmd.name) logger.command(`Executando comando "${config.prefix || '>'}${cmd.name}" de "${message.senderName}" | args: "${cmd.args}"`);
@@ -362,8 +366,10 @@ function createRouter({store, queue = new Queue(config.maxQueue), executeTool = 
                     }
                 });
             } catch (error) {
-                logger.error(`Erro no processamento da mensagem de "${message.senderName}": ${error.message}`, error);
-                await sendText(error.name === 'AbortError' ? 'Operação cancelada.' : error.isAxiosError ? 'O serviço externo está indisponível; tente novamente.' : String(error.message).slice(0,500));
+                if(error.code==='QUEUE_CANCELLED')return;
+                logger.error('Pedido falhou: '+error.message, error);
+                if(message.react) await message.react('\u274c').catch(err=>logger.warn('Falha ao reagir: '+err.message));
+
             }
         }
     };

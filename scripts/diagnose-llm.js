@@ -23,7 +23,7 @@ async function main(){
         const {data}=await axios.get('https://generativelanguage.googleapis.com/v1beta/models',{headers:{'x-goog-api-key':key},timeout:15000});
         console.log('AVAILABLE_MODELS',safe(data.models?.filter(m=>m.supportedGenerationMethods?.includes('generateContent')).map(m=>m.name)));
     }catch(e){console.log('MODELS_ERROR',e.response?.status,safe(e.response?.data || {code:e.code}));}
-    for(const model of config.getGeminiModels()) {
+    for(const model of [...new Set([config.geminiModel,config.geminiModelFallback])]) {
         for(const useTools of [false,true]) {
             try {
                 const {data}=await axios.post(config.geminiUrl,{model,messages:[{role:'system',content:'Responda brevemente.'},{role:'system',content:'Responda só ao usuário.'},{role:'user',content:'Responda apenas OK.'}],temperature:0.65,max_tokens:1500,...(useTools?{tools,tool_choice:'auto'}:{})},{headers:{Authorization:`Bearer ${key}`},timeout:20000});

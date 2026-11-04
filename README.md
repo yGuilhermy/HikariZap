@@ -195,3 +195,6 @@ Quer mudar minha alma? Tudo o que é importante está em `src/config/index.js` e
   <p><i>"Não se esqueça de me dar um pouco de amor (e poder de processamento)!"</i></p>
   <p>Feito com 💜 e café por <b>yGuilhermy</b></p>
 </div>
+
+
+Modelos, pausas de disponibilidade e limites da fila: veja [docs/IA_E_FILA.md](docs/IA_E_FILA.md).

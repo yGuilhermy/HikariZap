@@ -66,25 +66,25 @@ test('comandos do WhatsApp enviam uma lista e um documento, sem textos duplicado
 });
 
 test('resposta direta usa a lista citada e sem citação usa a busca mais recente',async()=>{
-    const downloaded=[],sent=[];
+    const downloaded=[],sent=[],reactions=[];
     const execute=createToolExecutor({searchGames:async query=>[{...game,title:query}],torrentFile:async selected=>{
         downloaded.push(selected.title);return {buffer:torrent,fileName:'teste.torrent',mimetype:'application/x-bittorrent'};
     }});
     const router=createRouter({store:{seen:()=>false,history:()=>[],addHistory:()=>{}},executeTool:execute,agent:async()=>assert.fail('IA não deve escolher o torrent')});
     let sequence=0;
-    const handle=(text,extra={})=>router.handle({id:String(++sequence),text,chatId:'123@g.us',isGroup:true,senderId:'5511999999999@s.whatsapp.net',send:async payload=>{sent.push(payload);return {key:{id:`reply-${sent.length}`}};},...extra});
+    const handle=(text,extra={})=>router.handle({id:String(++sequence),text,react:async emoji=>reactions.push(emoji),chatId:'123@g.us',isGroup:true,senderId:'5511999999999@s.whatsapp.net',send:async payload=>{sent.push(payload);return {key:{id:`reply-${sent.length}`}};},...extra});
     await handle('>torrent 1');
-    assert.match(sent[0].text,/não existe/);
+    assert.equal(reactions.at(-1),'\u274c');
     await handle('>torrent Primeiro jogo'); // reply-2
     await handle('>torrent Outro jogo'); // reply-3
-    await handle('1',{quotedMessageId:'reply-2',isReplyToBot:true});
+    await handle('1',{quotedMessageId:'reply-1',isReplyToBot:true});
     await handle('>torrent 1');
-    await handle('>torrent 1',{quotedMessageId:'reply-2',isReplyToBot:true});
+    await handle('>torrent 1',{quotedMessageId:'reply-1',isReplyToBot:true});
     assert.deepEqual(downloaded,['Primeiro jogo','Outro jogo','Primeiro jogo']);
     await handle('>torrent 1',{quotedMessageId:'mensagem-desconhecida',isReplyToBot:true});
-    await handle('>torrent 1',{quotedMessageId:'reply-2',isReplyToBot:true,senderId:'5511888888888@s.whatsapp.net'});
+    await handle('>torrent 1',{quotedMessageId:'reply-1',isReplyToBot:true,senderId:'5511888888888@s.whatsapp.net'});
     assert.equal(downloaded.length,3);
-    await handle('quero o 1',{quotedMessageId:'reply-2',isReplyToBot:true});
-    await handle('manda o primeiro por favor',{quotedMessageId:'reply-2',isReplyToBot:true});
+    await handle('quero o 1',{quotedMessageId:'reply-1',isReplyToBot:true});
+    await handle('manda o primeiro por favor',{quotedMessageId:'reply-1',isReplyToBot:true});
     assert.deepEqual(downloaded.slice(-2),['Primeiro jogo','Primeiro jogo']);
 });

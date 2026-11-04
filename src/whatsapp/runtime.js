@@ -55,6 +55,7 @@ function createSendLimiter({send,isActive,onRestricted,onLimit}) {
                 onLimit();
                 throw suppressed('Limite local de envios atingido; envio suprimido.');
             }
+            // Failed or ambiguous attempts count too. Never resend automatically.
             lastAttempt = now;
             recent.push(now);
             byChat.set(jid,[...times,now]);

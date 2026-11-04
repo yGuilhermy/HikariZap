@@ -17,8 +17,15 @@ function validateConfiguration(config) {
         const value=Number(raw);
         if(!Number.isFinite(value)||value<min||value>max||(integer&&!Number.isInteger(value))) errors.push(`${name}: informe ${integer?'um inteiro':'um número'} entre ${min} e ${max}.`);
     };
-    for(const name of ['SAVE_HISTORY','LOCAL_LLM_ENABLED','WHATSAPP_NOTIFY_OWNER'])if(process.env[name]&&!['true','false'].includes(process.env[name])) errors.push(`${name}: use true ou false.`);
+    for(const name of ['SAVE_HISTORY','LOCAL_LLM_ENABLED','WHATSAPP_NOTIFY_OWNER','ALLOW_PUBLIC_POLLINATIONS'])if(process.env[name]&&!['true','false'].includes(process.env[name])) errors.push(`${name}: use true ou false.`);
     for(const [name,min,max,int] of [['WHATSAPP_MAX_MEDIA_MB',1,64,true],['LLM_TIMEOUT_MS',5000,120000,true],['VOICE_SPEED',0.5,2,false],['VOICE_TEMPERATURE',0,2,false],['VOICE_MAX_CHARS',1,5000,true],['LOG_RETENTION_DAYS',1,90,true],['LOG_MAX_FILE_MB',1,50,false]])number(name,min,max,int);
+    for(const [name,min,max] of [['QUEUE_CONCURRENCY',1,4],['QUEUE_MAX_PENDING',1,100],['QUEUE_MAX_PER_CHAT',1,10],['QUEUE_WAIT_TIMEOUT_MS',1000,300000],['QUEUE_TASK_TIMEOUT_MS',5000,600000],['LLM_ATTEMPT_TIMEOUT_MS',1000,30000],['LLM_COMPLETION_BUDGET_MS',5000,120000],['LLM_AGENT_BUDGET_MS',10000,300000],['LLM_MAX_ATTEMPTS',1,20],['LLM_MAX_PROVIDER_ATTEMPTS',1,5],['LLM_MAX_OUTPUT_TOKENS',256,8192]])number(name,min,max,true);
+    if(config.llmAttemptTimeout>config.llmCompletionBudget)errors.push('LLM_ATTEMPT_TIMEOUT_MS deve caber em LLM_COMPLETION_BUDGET_MS.');
+    if(config.llmCompletionBudget>config.llmAgentBudget)errors.push('LLM_COMPLETION_BUDGET_MS deve caber em LLM_AGENT_BUDGET_MS.');
+    if(config.llmAgentBudget>config.queueTaskTimeout)errors.push('LLM_AGENT_BUDGET_MS deve caber em QUEUE_TASK_TIMEOUT_MS.');
+    if(!config.aiProviderOrder?.length)errors.push('AI_PROVIDER_ORDER deve conter ao menos um provedor.');
+    for(const family of config.aiProviderOrder||[])if(!['local','gemini','groq','huggingface','pollinations'].includes(family))errors.push('AI_PROVIDER_ORDER contém um provedor desconhecido.');
+    for(const name of ['GEMINI_MODELS','GROQ_MODELS','HF_MODELS'])if(process.env[name]&&!process.env[name].split(',').every(model=>/^[a-zA-Z0-9_.:/-]+$/.test(model.trim())))errors.push(`${name}: use IDs de modelos separados por vírgulas.`);
     if(process.env.LOG_LEVEL&&!['debug','info','warn','error'].includes(process.env.LOG_LEVEL))errors.push('LOG_LEVEL: use debug, info, warn ou error.');
     for(const name of ['GEMINI_URL','HF_API_URL','LOCAL_LLM_URL','MODAL_TTS_ENDPOINT','HF_TTS_ENDPOINT','POLLINATIONS_TEXT_URL','OPENAI_STT_URL','HF_STT_URL','LOCAL_STT_URL']) {
         if(!process.env[name])continue;
@@ -44,7 +51,7 @@ function validateConfiguration(config) {
     if(!capabilities.voice)warnings.push('Voz indisponível: configure um endpoint TTS e FFmpeg.');
     if(!capabilities.transcription)warnings.push('Transcrição indisponível: configure um provedor STT e FFmpeg.');
     if(!capabilities.deezer)warnings.push('Download Deezer indisponível: configure DEEZER_ARL e Python.');
-    if(!config.localLlmEnabled&&!config.geminiApiKeys.length&&!config.hfToken&&!process.env.POLLINATIONS_API_KEY)warnings.push('IA sem credenciais configuradas; apenas o provedor alternativo público poderá ser tentado.');
+    if(!config.localLlmEnabled&&!config.geminiApiKeys.length&&!config.hfToken&&!process.env.POLLINATIONS_API_KEY&&!process.env.GROQ_CHAT_API_KEY&&!process.env.GROQ_API_KEY)warnings.push('IA sem credenciais configuradas; configure um dos provedores antes de conversar.');
     return {errors:[...new Set(errors)],warnings:[...new Set(warnings)],capabilities};
 }
 module.exports={validateConfiguration,findExecutable};

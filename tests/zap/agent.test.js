@@ -31,3 +31,20 @@ test('pedido natural pesquisa e consulta Steam pelo loop real de ferramentas, se
     assert.deepEqual(calls,[['search_web','Node.js'],['check_steam','Portal 2']]);assert.equal(count,2);assert.match(sent.at(-1).text,/nodejs.org/);
     assert.equal(store.history(sender).length,2);
 });
+
+test('ferramenta repetida reutiliza o resultado e mantém todas as respostas de tool_call no histórico',async t=>{
+    const {executeAgentLoop}=require('../../src/handlers/llmHandler');
+    const old=config.localLlmEnabled,original=axios.post;config.localLlmEnabled=true;
+    t.after(()=>{config.localLlmEnabled=old;axios.post=original;});
+    let rounds=0,executions=0;
+    axios.post=async(url,body)=>{
+        rounds++;
+        if(rounds<=2)return {data:{choices:[{message:{content:null,tool_calls:[{id:'repeat-'+rounds,type:'function',function:{name:'search_web',arguments:'{"query":"node"}'}}]}}]}};
+        const ids=body.messages.filter(m=>m.role==='tool').map(m=>m.tool_call_id);
+        assert.deepEqual(ids,['repeat-1','repeat-2']);
+        return {data:{choices:[{message:{content:'resultado final'}}]}};
+    };
+    const ctx={signal:new AbortController().signal,history:[],store:{history:()=>[]},chatId:'test'};
+    assert.equal(await executeAgentLoop('pesquise node',ctx,async()=>{executions++;return {ok:true};}),'resultado final');
+    assert.equal(executions,1);
+});

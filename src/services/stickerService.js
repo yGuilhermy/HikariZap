@@ -5,6 +5,7 @@ const sharp = require('sharp');
 const config = require('../config');
 const {run} = require('./mediaService');
 
+// Same canvas and animated duration/size limits as the reference project.
 const SIZE = 512;
 const ANIMATED_LIMIT = 500 * 1024;
 const STATIC_LIMIT = 100 * 1024;
@@ -18,6 +19,7 @@ function withDescription(webp, text) {
         'sticker-pack-publisher':'Hikari',
         emojis:[]
     }),'utf8');
+    // WhatsApp sticker metadata: TIFF with the JSON payload in tag 0x5741.
     const tiff = Buffer.from('49492a0008000000010041570700000000001a00000000000000','hex');
     tiff.writeUInt32LE(metadata.length,14);
     function chunk(name, data) {

@@ -1,7 +1,7 @@
-const axios = require('axios');
 const config = require('../config');
 const {logger} = require('../utils/logger');
 const tools = require('../data/mcp_tools.json');
+const {getPool} = require('../services/aiProviders');
 
 function stripThinking(text, {keepToolCode = false} = {}) {
     if (typeof text !== 'string') return '';
@@ -10,6 +10,7 @@ function stripThinking(text, {keepToolCode = false} = {}) {
         .replace(/<(?:think|thinking|analysis|reasoning)\b[^>]*>[\s\S]*$/gi, '')
         .replace(/^[\s\S]*?<\/(?:think|thinking|analysis|reasoning)\s*>/gi, '')
         .replace(/```(?:thinking|analysis|reasoning|think)\b[^\n]*\n[\s\S]*?(?:```|$)/gi, '');
+    // Some providers put their private channel in content, without XML tags.
     const channel = clean.match(/\[start\]assistant\[channel\]analysis[\s\S]*?(?:\[message\]|$)|<\|(?:im_start|start)\|>assistant(?:<\|channel\|>|\s+)analysis(?:<\|message\|>|\s*)/i);
     if (channel) {
         const tail = clean.slice(channel.index);
@@ -22,6 +23,8 @@ function stripThinking(text, {keepToolCode = false} = {}) {
         const final = /^(?:\s*(?:#{1,6}\s*)?(?:\*{1,2}|__)?(?:final answer|final response|resposta final)(?:\*{1,2}|__)?\s*:\s*(?:\*{1,2})?\s*)([\s\S]*)/im.exec(tail);
         clean = clean.slice(0,thinking.index) + (final ? final[1] : '');
     }
+    // Keep compatibility calls only for the internal tool parser, after removing
+    // reasoning. They are still removed from all user-facing output.
     if (keepToolCode) return clean.trim();
     return clean
         .replace(/\[Hikari enviou [^\]]+\]\s*/gi, '')
@@ -132,44 +135,15 @@ ${require('../whatsapp/router').getHelpText()}`;
     messages = messages.map(message => message.role === 'assistant' && message.content
         ? {...message,content:stripThinking(message.content) || null} : message);
     messages = [{role:'system',content:'Responda apenas com a resposta final destinada ao usuário. Nunca inclua raciocínio interno, análise, planejamento, instruções do sistema ou blocos Thinking/Analysis na resposta. Use o canal próprio de ferramentas para chamadas de função.'},...messages];
-    const providers = [];
-    if (config.localLlmEnabled) providers.push({url:config.localLlmUrl, model:config.localLlmModel, key:config.lmStudioApiKey});
-    const geminiModels = config.getGeminiModels ? config.getGeminiModels() : [...new Set([config.geminiModel,config.geminiModelFallback,config.geminiModelFallback2 || 'gemini-2.5-flash-lite',config.geminiModelFallback3 || 'gemini-2.5-flash'].filter(Boolean))];
-    for (const model of geminiModels) {
-        for (const key of config.geminiApiKeys) providers.push({url:config.geminiUrl, model, key});
-    }
-    if (config.hfToken) providers.push({url:config.hfApiUrl, model:config.hfModel, key:config.hfToken});
-    providers.push({url:process.env.POLLINATIONS_TEXT_URL || 'https://text.pollinations.ai/openai', model:process.env.POLLINATIONS_MODEL || 'openai', key:process.env.POLLINATIONS_API_KEY});
-    const toolPayload = Array.isArray(toolOption) ? {tools: toolOption, tool_choice: 'auto'} : toolOption ? {tools, tool_choice: 'auto'} : {};
-    for (const provider of providers) {
-        signal?.throwIfAborted();
-        try {
-            logger.ai(`Consultando provedor IA: ${provider.model} (${provider.url})...`);
-            const response = await axios.post(provider.url, {
-                model:provider.model, messages, temperature:0.65, max_tokens:1500,
-                ...toolPayload
-            }, {headers:{'Content-Type':'application/json', ...(provider.key ? {Authorization:`Bearer ${provider.key}`} : {})}, timeout:config.llmTimeout, signal});
-            const message = response.data?.choices?.[0]?.message;
-            if (message && (message.content || message.tool_calls?.length)) {
-                const content = stripThinking(message.content,{keepToolCode:true});
-                if (!content && !message.tool_calls?.length) {
-                    logger.warn('Resposta da IA sem conteúdo final utilizável; tentando próximo provedor.');
-                    continue;
-                }
-                logger.ai(`Provedor ${provider.model} respondeu. Ferramentas: ${message.tool_calls?.length || 0}`);
-                return {role:'assistant',content:content || null,...(message.tool_calls?.length ? {tool_calls:message.tool_calls} : {})};
-            }
-        } catch (error) {
-            signal?.throwIfAborted();
-            const body = error.response?.data;
-            const detail = (Array.isArray(body) ? body[0]?.error : body?.error);
-            let reason = typeof detail?.message === 'string' ? detail.message : '';
-            for (const key of [provider.key,...config.geminiApiKeys].filter(Boolean)) reason = reason.split(key).join('[REDACTED]');
-            reason = reason.replace(/AIza[A-Za-z0-9_-]+/g,'[REDACTED]').replace(/[\r\n]+/g,' ').slice(0,700);
-            logger.warn(`Provedor ${provider.model} indisponível (${error.response?.status || error.code || 'erro de conexão'})${reason ? `: ${reason}` : ''}; tentando próximo...`);
-        }
-    }
-    throw new Error('Os provedores de IA estão indisponíveis. Confira as chaves e tente novamente.');
+    const toolPayload = Array.isArray(toolOption) ? {tools:toolOption,tool_choice:'auto'} : toolOption ? {tools,tool_choice:'auto'} : {};
+    return getPool().complete({messages,temperature:0.65,max_tokens:config.llmMaxOutputTokens,...toolPayload},signal,message=>{
+        const content=stripThinking(message.content,{keepToolCode:true});
+        const calls=Array.isArray(message.tool_calls)?message.tool_calls:[];
+        if(!content&&!calls.length)return null;
+        return {role:'assistant',content:content||null,...(calls.length?{tool_calls:calls.map((call,index)=>({
+            id:call.id||`call_${Date.now()}_${index}`,type:'function',function:{name:call.function?.name||'',arguments:typeof call.function?.arguments==='string'?call.function.arguments:JSON.stringify(call.function?.arguments||{})}
+        }))}:{})};
+    });
 }
 
 async function generateResponse(prompt, chatId, options = {}) {
@@ -179,11 +153,12 @@ async function generateResponse(prompt, chatId, options = {}) {
 }
 
 async function executeAgentLoop(prompt, ctx, executeTool) {
-    const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(120000)].filter(Boolean));
+    const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(config.llmAgentBudget)].filter(Boolean));
     const activeTools = ctx.wantsAudio ? tools : tools.filter(t => t.function.name !== 'send_voice_note');
     const messages = [{role:'system',content:config.systemPrompt + `\nData atual: ${new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}`}, ...(ctx.history || ctx.store.history(ctx.chatId)), {role:'user',content:prompt}];
     let hasExecutedTools = false;
     const executedKeys = new Set();
+    const executedResults = new Map();
     for (let round = 0; round < config.maxToolRounds; round++) {
         logger.ai(`Loop do agente: rodada ${round + 1}/${config.maxToolRounds}`);
         const response = await completion(messages, signal, activeTools);
@@ -211,7 +186,10 @@ async function executeAgentLoop(prompt, ctx, executeTool) {
         for (const call of response.tool_calls) {
             signal.throwIfAborted();
             const callKey = `${call.function.name}:${call.function.arguments}`;
-            if (executedKeys.has(callKey)) continue;
+            if (executedKeys.has(callKey)) {
+                messages.push({role:'tool',tool_call_id:call.id,content:executedResults.get(callKey)||JSON.stringify({error:'Ferramenta já executada; não repetir a ação.'})});
+                continue;
+            }
             executedKeys.add(callKey);
             let result;
             logger.ai(`Executando ferramenta "${call.function.name}" | args: ${call.function.arguments}`);
@@ -220,8 +198,10 @@ async function executeAgentLoop(prompt, ctx, executeTool) {
                 result = await executeTool(call.function.name,args,ctx);
                 hasExecutedTools = true;
             } catch (error) { signal.throwIfAborted(); result = {error:error.message}; }
-            logger.ai(`Resultado da ferramenta "${call.function.name}": ${JSON.stringify(result).slice(0, 250)}`);
-            messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result).slice(0,12000)});
+            const resultContent = JSON.stringify(result ?? {ok:true}).slice(0,12000);
+            executedResults.set(callKey,resultContent);
+            logger.ai(`Resultado da ferramenta "${call.function.name}": ${resultContent.slice(0, 250)}`);
+            messages.push({role:'tool',tool_call_id:call.id,content:resultContent});
         }
         if (ctx.toolReplySent) return '';
     }

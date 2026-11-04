@@ -20,7 +20,7 @@ function isPlaceholderKey(key) {
     return k.includes("sua_chave") || k.includes("suas_chave") || k.includes("seu_token") || k.includes("your_key") || k.includes("placeholder") || k.length < 10;
 }
 
-async function transcribeWithGroq(audioBuffer, apiKey, filename) {
+async function transcribeWithGroq(audioBuffer, apiKey, filename, signal) {
     const formData = new FormData;
     formData.append("file", audioBuffer, {
         filename: filename,
@@ -35,7 +35,8 @@ async function transcribeWithGroq(audioBuffer, apiKey, filename) {
             ...formData.getHeaders(),
             Authorization: `Bearer ${apiKey}`
         },
-        timeout: 1e4
+        timeout: 1e4,
+        signal
     });
     if (response.data && response.data.text) {
         return response.data.text.trim();
@@ -43,44 +44,20 @@ async function transcribeWithGroq(audioBuffer, apiKey, filename) {
     return null;
 }
 
-async function transcribeWithGemini(audioBuffer, apiKey) {
-    const key = apiKey || (typeof config.getGeminiKey === "function" ? config.getGeminiKey() : null) || process.env.GEMINI_API_KEY;
-    const base64Audio = audioBuffer.toString("base64");
-    const model = config.geminiModelFallback && !config.geminiModelFallback.includes("1.5") ? config.geminiModelFallback : process.env.GEMINI_MODEL_FALLBACK && !process.env.GEMINI_MODEL_FALLBACK.includes("1.5") ? process.env.GEMINI_MODEL_FALLBACK : "gemini-2.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const payload = {
-        contents: [ {
-            parts: [ {
-                text: "Transcreva exatamente o áudio em português fornecido. Retorne APENAS o texto falado, sem saudações ou comentários."
-            }, {
-                inlineData: {
-                    mimeType: "audio/wav",
-                    data: base64Audio
-                }
-            } ]
-        } ]
-    };
-    const response = await axios.post(url, payload, {
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": key
-        },
-        timeout: 8e3
-    });
-    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (text) {
-        return text.trim();
-    }
-    return null;
+async function transcribeWithGemini(audioBuffer, signal) {
+    return require('./aiProviders').getPool().generateGemini({
+        contents:[{parts:[{text:'Transcreva exatamente o áudio em português fornecido. Retorne APENAS o texto falado, sem saudações ou comentários.'},{inlineData:{mimeType:'audio/wav',data:audioBuffer.toString('base64')}}]}]
+    },signal);
 }
 
-async function transcribeWithWitAi(audioBuffer, token) {
+async function transcribeWithWitAi(audioBuffer, token, signal) {
     const response = await axios.post("https://api.wit.ai/speech?v=20230215", audioBuffer, {
         headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "audio/wav"
         },
-        timeout: 1e4
+        timeout: 1e4,
+        signal
     });
     const rawData = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
     const matches = rawData.match(/\{[\s\S]*?\}(?=\s*\{|$)/g);
@@ -97,14 +74,15 @@ async function transcribeWithWitAi(audioBuffer, token) {
     return null;
 }
 
-async function transcribeWithHuggingFace(audioBuffer, token) {
+async function transcribeWithHuggingFace(audioBuffer, token, signal) {
     const endpoint = process.env.HF_STT_URL || "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo";
     const response = await axios.post(endpoint, audioBuffer, {
         headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "audio/wav"
         },
-        timeout: 12e3
+        timeout: 12e3,
+        signal
     });
     if (response.data && response.data.text) {
         return response.data.text.trim();
@@ -112,7 +90,7 @@ async function transcribeWithHuggingFace(audioBuffer, token) {
     return null;
 }
 
-async function transcribeWithOpenAI(audioBuffer, apiKey, filename) {
+async function transcribeWithOpenAI(audioBuffer, apiKey, filename, signal) {
     const formData = new FormData;
     formData.append("file", audioBuffer, {
         filename: filename,
@@ -128,7 +106,8 @@ async function transcribeWithOpenAI(audioBuffer, apiKey, filename) {
             ...formData.getHeaders(),
             Authorization: `Bearer ${apiKey}`
         },
-        timeout: 12e3
+        timeout: 12e3,
+        signal
     });
     if (response.data && response.data.text) {
         return response.data.text.trim();
@@ -136,7 +115,7 @@ async function transcribeWithOpenAI(audioBuffer, apiKey, filename) {
     return null;
 }
 
-async function transcribeWithLocal(audioBuffer, localUrl, filename) {
+async function transcribeWithLocal(audioBuffer, localUrl, filename, signal) {
     const formData = new FormData;
     formData.append("file", audioBuffer, {
         filename: filename,
@@ -151,7 +130,8 @@ async function transcribeWithLocal(audioBuffer, localUrl, filename) {
     }
     const response = await axios.post(localUrl, formData, {
         headers: headers,
-        timeout: 15e3
+        timeout: 15e3,
+        signal
     });
     if (response.data && response.data.text) {
         return response.data.text.trim();
@@ -159,7 +139,7 @@ async function transcribeWithLocal(audioBuffer, localUrl, filename) {
     return null;
 }
 
-async function transcribeAudio(audioBuffer, filename = "speech.wav") {
+async function transcribeAudio(audioBuffer, filename = "speech.wav", signal) {
     const providers = [];
     const groqKeysRaw = process.env.GROQ_API_KEY || "";
     if (STT_PROVIDERS_CONFIG.GROQ && groqKeysRaw) {
@@ -167,7 +147,7 @@ async function transcribeAudio(audioBuffer, filename = "speech.wav") {
         keys.forEach((k, idx) => {
             providers.push({
                 name: `Groq (Chave ${idx + 1})`,
-                fn: () => transcribeWithGroq(audioBuffer, k, filename)
+                fn: () => transcribeWithGroq(audioBuffer, k, filename, signal)
             });
         });
     }
@@ -175,35 +155,35 @@ async function transcribeAudio(audioBuffer, filename = "speech.wav") {
     if (STT_PROVIDERS_CONFIG.WITAI && !isPlaceholderKey(witToken)) {
         providers.push({
             name: "Wit.ai",
-            fn: () => transcribeWithWitAi(audioBuffer, witToken)
+            fn: () => transcribeWithWitAi(audioBuffer, witToken, signal)
         });
     }
     const geminiKey = (typeof config.getGeminiKey === "function" ? config.getGeminiKey() : null) || process.env.GEMINI_API_KEY;
     if (STT_PROVIDERS_CONFIG.GEMINI && !isPlaceholderKey(geminiKey)) {
         providers.push({
             name: "Gemini Flash Audio (Google API)",
-            fn: () => transcribeWithGemini(audioBuffer, geminiKey)
+            fn: () => transcribeWithGemini(audioBuffer, signal)
         });
     }
     const hfToken = process.env.HF_TOKEN;
     if (STT_PROVIDERS_CONFIG.HUGGINGFACE && !isPlaceholderKey(hfToken)) {
         providers.push({
             name: "HuggingFace STT",
-            fn: () => transcribeWithHuggingFace(audioBuffer, hfToken)
+            fn: () => transcribeWithHuggingFace(audioBuffer, hfToken, signal)
         });
     }
     const openAiKey = process.env.OPENAI_STT_KEY;
     if (STT_PROVIDERS_CONFIG.OPENAI && !isPlaceholderKey(openAiKey)) {
         providers.push({
             name: "OpenAI Whisper",
-            fn: () => transcribeWithOpenAI(audioBuffer, openAiKey, filename)
+            fn: () => transcribeWithOpenAI(audioBuffer, openAiKey, filename, signal)
         });
     }
     const localSttUrl = process.env.LOCAL_STT_URL;
     if (STT_PROVIDERS_CONFIG.LOCAL && localSttUrl) {
         providers.push({
             name: "Local Whisper STT",
-            fn: () => transcribeWithLocal(audioBuffer, localSttUrl, filename)
+            fn: () => transcribeWithLocal(audioBuffer, localSttUrl, filename, signal)
         });
     }
     if (providers.length === 0) {
@@ -213,6 +193,7 @@ async function transcribeAudio(audioBuffer, filename = "speech.wav") {
     let lastRateLimit = null;
     for (let i = 0; i < providers.length; i++) {
         const provider = providers[i];
+        signal?.throwIfAborted();
         try {
             const text = await provider.fn();
             if (text) {
@@ -222,6 +203,7 @@ async function transcribeAudio(audioBuffer, filename = "speech.wav") {
                 return text;
             }
         } catch (error) {
+            signal?.throwIfAborted();
             const status = error.response?.status;
             const isRate = status === 429 || status === 492 || error.response?.data?.error?.code === "rate_limit_exceeded";
             if (isRate) {
