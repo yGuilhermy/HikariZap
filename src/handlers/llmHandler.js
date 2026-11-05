@@ -141,7 +141,7 @@ ${require('../whatsapp/router').getHelpText()}`;
         const calls=Array.isArray(message.tool_calls)?message.tool_calls:[];
         if(!content&&!calls.length)return null;
         return {role:'assistant',content:content||null,...(calls.length?{tool_calls:calls.map((call,index)=>({
-            id:call.id||`call_${Date.now()}_${index}`,type:'function',function:{name:call.function?.name||'',arguments:typeof call.function?.arguments==='string'?call.function.arguments:JSON.stringify(call.function?.arguments||{})}
+            ...call,id:call.id||`call_${Date.now()}_${index}`,type:'function',function:{name:call.function?.name||'',arguments:typeof call.function?.arguments==='string'?call.function.arguments:JSON.stringify(call.function?.arguments||{})}
         }))}:{})};
     });
 }

@@ -130,6 +130,7 @@ function getTelemetryText(message, queue, isOwner, now = Date.now()) {
 function queueOptions() { return {concurrency:config.queueConcurrency,perChatLimit:config.maxQueuePerChat,maxWaitMs:config.queueWaitMs,taskTimeoutMs:config.queueTaskTimeout}; }
 function createRouter({store, queue = new Queue(config.maxQueue,queueOptions()), executeTool = createToolExecutor(), agent, transcribe, describe, stickerService} = {}) {
     if (!store) throw new Error('Armazenamento obrigatório.');
+    if (process.env.HIKARI_START_PAUSED === 'true') queue.pause();
     const ownerQueue = new Queue(config.maxQueue,{...queueOptions(),concurrency:1});
     const availabilityNotices = new Map();
     agent ||= (...args) => require('../handlers/llmHandler').executeAgentLoop(...args);

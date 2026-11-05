@@ -20,8 +20,9 @@ test('pedido natural pesquisa e consulta Steam pelo loop real de ferramentas, se
         assert.ok(payload.tools.every(x=>!x.function.name.startsWith('db_')));
         if(count===1){
             assert.match(payload.messages.at(-1).content,/pesquise/);
-            return {data:{choices:[{message:{content:null,tool_calls:[{id:'web1',type:'function',function:{name:'search_web',arguments:'{"query":"Node.js"}'}},{id:'steam1',type:'function',function:{name:'check_steam',arguments:'{"game":"Portal 2"}'}}]}}]}};
+            return {data:{choices:[{message:{content:null,tool_calls:[{id:'web1',type:'function',extra_content:{google:{thought_signature:'test-signature'}},function:{name:'search_web',arguments:'{"query":"Node.js"}'}},{id:'steam1',type:'function',function:{name:'check_steam',arguments:'{"game":"Portal 2"}'}}]}}]}};
         }
+        assert.equal(payload.messages.find(x=>x.tool_calls)?.tool_calls[0].extra_content.google.thought_signature,'test-signature');
         const results=payload.messages.filter(x=>x.role==='tool');assert.equal(results.length,2);assert.match(results[0].content,/nodejs.org/);assert.match(results[1].content,/Portal/);
         return {data:{choices:[{message:{content:'Node.js está em https://nodejs.org/. Portal 2 custa R$ 10 no teste.'}}]}};
     };

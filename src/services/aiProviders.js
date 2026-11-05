@@ -101,7 +101,7 @@ class ProviderPool {
     markFailure(provider,withTools,error) {
         const info=errorKind(error),ids=scopes(provider,withTools);
         const scope=info.kind==='credential'?ids.credential:info.kind==='tool-support'?ids.tools:
-            ['rate-limit','daily-quota','capacity'].includes(info.kind)?ids.model:info.kind==='network'?ids.service:ids.pair;
+            ['rate-limit','daily-quota','capacity'].includes(info.kind)?ids.model:ids.pair;
         const previous=this.health.get(scope),failures=Math.min(6,(previous?.failures||0)+1);
         const transient=['rate-limit','capacity','network'].includes(info.kind);
         const backoff=transient?Math.min(900000,info.ms*2**(failures-1)):info.ms;
@@ -153,7 +153,7 @@ class ProviderPool {
         throw Object.assign(new Error(`Estou sem um modelo de IA disponível agora. Tente novamente em cerca de ${seconds<60?seconds+' segundos':Math.ceil(seconds/60)+' minuto(s)'}.`),{code:'AI_UNAVAILABLE',retryAfterMs:seconds*1000});
     }
     async generateGemini(payload,signal) {
-        const deadline=Date.now()+Math.min(20000,config.llmCompletionBudget);
+        const deadline=Date.now()+Math.max(config.llmCompletionBudget,config.getGeminiModels().length*config.llmAttemptTimeout);
         let attempts=0;
         for(const model of config.getGeminiModels()) {
             signal?.throwIfAborted();
@@ -161,7 +161,7 @@ class ProviderPool {
             if(!key)break;
             const provider={family:'gemini',model,key,url:config.geminiUrl};
             if(this.remaining(provider,false))continue;
-            if(attempts>=config.llmMaxProviderAttempts||Date.now()>=deadline)break;
+            if(Date.now()>=deadline)break;
             const identity=scopes(provider,false).pair;
             if(this.inflight.has(identity))continue;
             this.inflight.add(identity);attempts++;
